@@ -14,7 +14,7 @@ def hash_pin(apartment_number, pin):
 def load_pins():
     """Load PIN data from the JSON file."""
     try:
-        with open("hashed_pins.json", "r") as file:
+        with open("pins.json", "r") as file:
             return json.load(file)
     except FileNotFoundError:
         return {}
@@ -22,7 +22,7 @@ def load_pins():
 
 def save_pins(pins):
     """Save PIN data to the JSON file."""
-    with open("hashed_pins.json", "w") as file:
+    with open("pins.json", "w") as file:
         json.dump(pins, file, indent=4)
 
 

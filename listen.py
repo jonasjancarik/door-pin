@@ -2,6 +2,8 @@ import time
 import hashlib
 import RPi.GPIO as GPIO
 from evdev import InputDevice, categorize, ecodes
+import json
+import sys
 
 # Configuration Constants
 RELAY_PIN = 18
@@ -15,12 +17,12 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setup(RELAY_PIN, GPIO.OUT)
 GPIO.output(RELAY_PIN, GPIO.LOW)
 
-# Load hashed PINs from a file
-user_hashes = {}
-with open("hashed_pins.txt", "r") as file:
-    for line in file:
-        user_id, hashed_pin = line.strip().split(":")
-        user_hashes[user_id] = hashed_pin
+# Load hashed PINs from a json file
+try:
+    with open("pins.json", "r") as file:
+        user_hashes = json.load(file)
+except FileNotFoundError:
+    sys.exit('No "pins.json" file found. No PINs loaded.')
 
 
 def hash_pin(user_id, pin):
