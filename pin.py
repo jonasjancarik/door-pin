@@ -1,14 +1,6 @@
-import hashlib
 import json
 import datetime
-
-
-def hash_pin(apartment_number, pin):
-    """Hash a PIN using SHA-256 with apartment number as salt and return the hexadecimal string."""
-    salted_pin = apartment_number + pin  # Combine apartment number and PIN for salting
-    hasher = hashlib.sha256()
-    hasher.update(salted_pin.encode("utf-8"))
-    return hasher.hexdigest()
+import utils
 
 
 def load_pins():
@@ -31,7 +23,7 @@ def create_pin(pins):
     apartment_number = input("Enter apartment number (two digits): ")
     pin = input("Enter PIN (four digits): ")
     creator_name = input("Enter your name: ")
-    hashed_pin = hash_pin(apartment_number, pin)
+    hashed_pin = utils.hash_secret(apartment_number, pin)
     entry = {
         "hashed_pin": hashed_pin,
         "creator": creator_name,

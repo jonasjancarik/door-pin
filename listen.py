@@ -1,4 +1,3 @@
-import hashlib
 from evdev import InputDevice, categorize, ecodes
 import json
 import sys
@@ -13,14 +12,6 @@ try:
         users = json.load(file)
 except FileNotFoundError:
     sys.exit('No "pins.json" file found. No PINs loaded.')
-
-
-def hash_pin(user_id, pin):
-    """Hash a PIN using SHA-256 with user ID as salt and return the hexadecimal string."""
-    salted_pin = user_id + pin
-    hasher = hashlib.sha256()
-    hasher.update(salted_pin.encode("utf-8"))
-    return hasher.hexdigest()
 
 
 def open_door():
@@ -85,7 +76,10 @@ def main():
                                 user = users.get(user_id)
                                 if user:
                                     user_pin_hashes = [x["hashed_pin"] for x in user]
-                                    if hash_pin(user_id, pin) in user_pin_hashes:
+                                    if (
+                                        utils.hash_secret(user_id, pin)
+                                        in user_pin_hashes
+                                    ):
                                         open_door()
                                         input_pin = ""
                                         print(
