@@ -1,19 +1,16 @@
-import time
 import hashlib
-import RPi.GPIO as GPIO
 from evdev import InputDevice, categorize, ecodes
 import json
 import sys
 import utils
 
-USER_PIN_LENGTH = 6
-TIMEOUT_DURATION = 30  # seconds
-KEYBOARD_PATH = "/dev/input/event0"  # Will be used if there are multiple keyboards
+PIN_LENGTH = 6  # Total length including user ID
+KEYBOARD_PATH = "/dev/input/event0"
 
 # Load hashed PINs from a json file
 try:
     with open("pins.json", "r") as file:
-        user_hashes = json.load(file)
+        users = json.load(file)
 except FileNotFoundError:
     sys.exit('No "pins.json" file found. No PINs loaded.')
 
@@ -57,54 +54,51 @@ def main():
 
     print(f"Using keyboard: {keyboard.name} at {keyboard.path}")
     input_pin = ""
-    last_input_time = time.time()
 
-    print("Enter User ID and PIN (6 digits): ", end="", flush=True)
+    print("Enter User ID and PIN: ", end="", flush=True)
     while True:
         for event in keyboard.read_loop():
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
-                if data.keystate == 1:  # Down events only
+                if data.keystate == 1:  # Key down events only
                     if isinstance(data.keycode, list):
                         key_code = data.keycode[0]
                     else:
                         key_code = data.keycode
 
-                    # print(f"Detected key code: {key_code}")  # Debug print
-
                     if "KEY_" in key_code:
                         key = key_code.split("_")[1].replace("KP", "")
-                        if key.isdigit() and len(input_pin) < USER_PIN_LENGTH:
+                        if key.isdigit():
                             input_pin += key
-                            print(key, end="", flush=True)
-                            last_input_time = time.time()
-                        else:
+                            # print(key, end="", flush=True)
+                            # Keep only the last 6 digits
+                            input_pin = input_pin[-PIN_LENGTH:]
                             print(
-                                "A non-digit key was pressed. PIN entry has been reset."
-                            )
-                            input_pin = ""  # clear input on any other key
-
-                        if len(input_pin) == USER_PIN_LENGTH:
-                            user_id, pin = input_pin[:2], input_pin[2:]
-                            if hash_pin(user_id, pin) == user_hashes.get(user_id, ""):
-                                open_door()
-                            else:
-                                print("\nIncorrect PIN or User ID.")
-                            input_pin = ""
-                            print(
-                                "\nEnter User ID and PIN (6 digits): ",
+                                f"\rEnter User ID and PIN: {input_pin}",
                                 end="",
                                 flush=True,
                             )
 
-                        if time.time() - last_input_time > TIMEOUT_DURATION:
+                            if len(input_pin) == PIN_LENGTH:
+                                user_id, pin = input_pin[:2], input_pin[2:]
+                                # get user's pin hashes
+                                user = users.get(user_id)
+                                if user:
+                                    user_pin_hashes = [x["hashed_pin"] for x in user]
+                                    if hash_pin(user_id, pin) in user_pin_hashes:
+                                        open_door()
+                                        input_pin = ""
+                                        print(
+                                            "Enter User ID and PIN: ",
+                                            end="",
+                                            flush=True,
+                                        )
+                        else:
                             print(
-                                "\nNo input for 30 seconds. PIN entry has been reset."
+                                "\nA non-digit key was pressed. Please only enter digits."
                             )
                             input_pin = ""
-                            print(
-                                "Enter User ID and PIN (6 digits): ", end="", flush=True
-                            )
+                            print("Enter User ID and PIN: ", end="", flush=True)
 
 
 if __name__ == "__main__":
