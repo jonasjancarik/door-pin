@@ -1,8 +1,7 @@
 from fastapi import FastAPI, HTTPException
 import hashlib
-import datetime
 import json
-from typing import Optional
+import utils
 
 app = FastAPI()
 
@@ -19,22 +18,23 @@ def hash_token(username, token):
     salted_token = f"{username}{token}"
     return hashlib.sha256(salted_token.encode('utf-8')).hexdigest()
 
-# Unlock the door (simulate GPIO action)
+# Unlock the door
 def unlock_door():
-    print("Door unlocked!")
-    # Here you would add the actual GPIO code to unlock the door
-    # GPIO.output(RELAY_PIN, GPIO.HIGH)
-    # time.sleep(RELAY_ACTIVATION_TIME)
-    # GPIO.output(RELAY_PIN, GPIO.LOW)
+    utils.unlock_door()
 
-@app.get("/unlock_door")
-@app.get("/unlock_door/")
+
+@app.get("/door/unlock")
+@app.get("/door/unlock/")
 def api_unlock_door(username: str, token: str):
     tokens = load_tokens()
     hashed_token = hash_token(username, token)
     if tokens.get(username)['hashed_token'] == hashed_token:
-        unlock_door()
-        return {"message": "Door unlocked successfully"}
+        try:
+            unlock_door()
+            return {"message": "Door unlocked successfully"}
+        except Exception as e:
+            # Coudln't unlock the door for some reason
+            raise HTTPException(status_code=500, detail=str(e))
     else:
         raise HTTPException(status_code=401, detail="Unauthorized")
 

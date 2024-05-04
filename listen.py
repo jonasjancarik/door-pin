@@ -4,18 +4,11 @@ import RPi.GPIO as GPIO
 from evdev import InputDevice, categorize, ecodes
 import json
 import sys
+import utils
 
-# Configuration Constants
-RELAY_PIN = 18
-RELAY_ACTIVATION_TIME = 5  # seconds
 USER_PIN_LENGTH = 6
 TIMEOUT_DURATION = 30  # seconds
 KEYBOARD_PATH = "/dev/input/event0"  # Will be used if there are multiple keyboards
-
-# GPIO setup
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(RELAY_PIN, GPIO.OUT)
-GPIO.output(RELAY_PIN, GPIO.LOW)
 
 # Load hashed PINs from a json file
 try:
@@ -36,9 +29,7 @@ def hash_pin(user_id, pin):
 def open_door():
     """Activate the relay to open the door."""
     print("\nPIN correct! Activating relay.")
-    GPIO.output(RELAY_PIN, GPIO.HIGH)
-    time.sleep(RELAY_ACTIVATION_TIME)
-    GPIO.output(RELAY_PIN, GPIO.LOW)
+    utils.unlock_door()
     print("Relay deactivated.")
 
 
