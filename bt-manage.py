@@ -6,7 +6,7 @@ bt = utils.Bluetoothctl()
 
 
 def add_paired():
-    paired_devices = bt.list_paired_devices(mac_only=False)
+    paired_devices = bt.list_paired_devices()
 
     if not paired_devices:
         print("No paired devices found.")
@@ -36,12 +36,13 @@ def add_paired():
                 {
                     "label": label,
                     "owner": owner,
-                    "mac": device.split(" ")[0],
+                    "mac": device["mac"],
+                    "name": device["name"],
                 }
             )
 
             with open("approved_devices.json", "w") as f:
-                json.dump(approved_devices, f)
+                json.dump(approved_devices, f, ensure_ascii=False, indent=4)
 
             print("Device added successfully.")
 
@@ -63,7 +64,7 @@ def add_without_pairing():
     )
 
     with open("approved_devices.json", "w") as f:
-        json.dump(approved_devices, f)
+        json.dump(approved_devices, f, ensure_ascii=False, indent=4)
 
     print("Device added successfully.")
 
@@ -92,7 +93,7 @@ def list_or_remove():
     approved_devices.pop(choice - 1)
 
     with open("approved_devices.json", "w") as f:
-        json.dump(approved_devices, f)
+        json.dump(approved_devices, f, ensure_ascii=False, indent=4)
 
     print("Device removed successfully.")
 

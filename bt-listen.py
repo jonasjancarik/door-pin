@@ -10,14 +10,16 @@ approved_devices_by_mac = {
 }
 
 while True:
-    devices = (
-        bt.list_devices()
+    devices = bt.list_available_devices(
+        scan_duration=11
     )  # todo: lists all known devices, not just the nearby ones
 
     if not devices:
         continue
 
     nearby_devices = set()
+
+    print(devices)
 
     for mac, name in devices:
         nearby_devices.add(mac)
@@ -30,6 +32,6 @@ while True:
             nearby_approved_devices.append(approved_devices_by_mac[mac])
 
     if nearby_approved_devices:
-        print(f"Unlocking, nearby paired devices: {nearby_approved_devices}")
+        print(f"Unlocking, nearby approved devices: {nearby_approved_devices}")
         utils.unlock_door()
         time.sleep(3)

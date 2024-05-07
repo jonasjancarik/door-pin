@@ -37,7 +37,7 @@ class Bluetoothctl:
     def __init__(self):
         try:
             self.child = pexpect.spawn("bluetoothctl", echo=False)
-            # self.child.expect("#", timeout=5)
+            # self.child.expect(r"\[bluetooth\]#", timeout=10)  # todo: fix expect
         except (pexpect.EOF, pexpect.TIMEOUT) as e:
             raise BluetoothctlError("Error starting bluetoothctl: " + str(e))
 
@@ -48,39 +48,38 @@ class Bluetoothctl:
         self.child.expect("#", timeout=5)
         return self.child.before.decode().split("\r\n")
 
-    def start_scan(self, scan_duration=10):
+    def scan(self, scan_duration=10):
         """Start scanning for nearby devices for a specified duration."""
         print("Starting to scan for devices...")
         self.get_output("scan on", 1)
         print(f"Scanning for {scan_duration} seconds...")
         time.sleep(scan_duration)
-        self.get_output("scan off", 1)
+        output = self.get_output("scan off", 1)
         print("Scan completed.")
+        return output
 
-    def list_devices(self):
-        """List available devices."""
-        print("Getting available devices...")
-        output = self.get_output("devices")
+    def list_available_devices(self, scan_duration=10):
+        """List available devices by scanning and filtering output."""
+        print("Scanning for available devices...")
+        scan_output = self.scan(scan_duration)
+        devices = []
+        for line in scan_output:
+            line = line.strip()
+            if "Device" in line and ("NEW" in line or "CHG" in line):
+                parts = line.split("Device ")[1].split(" ")
+                devices.append((parts[0], " ".join(parts[1:])))
+        print(f"Found {len(devices)} nearby devices.")
+        return devices
+
+    def list_paired_devices(self, scan_duration=10):
+        """List paired devices by scanning and filtering output."""
+        output = self.get_output("paired-devices", 1)
         devices = []
         for line in output:
             line = line.strip()
             if "Device" in line:
-                parts = line.split(" ", 2)
-                if len(parts) >= 3:
-                    devices.append((parts[1], parts[2]))
-        return devices
-
-    def list_paired_devices(self, mac_only=True):
-        """List paired devices."""
-        print("Getting paired devices...")
-        output = self.get_output("paired-devices")
-        devices = []
-        for line in output:
-            if "Device" in line:
-                if mac_only:
-                    devices.append(line.split("Device ")[1].split(" ")[0])
-                else:
-                    devices.append(line.split("Device ")[1])
+                parts = line.split("Device ")[1].split(" ")
+                devices.append({"mac": parts[0], "name": " ".join(parts[1:])})
         return devices
 
     def pair_device(self, mac_address):

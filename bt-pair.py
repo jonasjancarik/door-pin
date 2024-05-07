@@ -10,7 +10,7 @@ def main():
     choice = 0
 
     while choice == 0:
-        bl.start_scan(scan_duration)
+        bl.scan(scan_duration)
 
         devices = bl.list_devices()
         if not devices:
