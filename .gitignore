@@ -1,7 +1,8 @@
 .vscode
 pins.json
 tokens.json
-approved_devices.json
+devices.json
+users.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

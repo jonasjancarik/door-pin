@@ -41,7 +41,7 @@ def add_paired():
                 }
             )
 
-            with open("approved_devices.json", "w") as f:
+            with open("devices.json", "w") as f:
                 json.dump(approved_devices, f, ensure_ascii=False, indent=4)
 
             print("Device added successfully.")
@@ -63,7 +63,7 @@ def add_without_pairing():
         }
     )
 
-    with open("approved_devices.json", "w") as f:
+    with open("devices.json", "w") as f:
         json.dump(approved_devices, f, ensure_ascii=False, indent=4)
 
     print("Device added successfully.")
@@ -92,7 +92,7 @@ def list_or_remove():
 
     approved_devices.pop(choice - 1)
 
-    with open("approved_devices.json", "w") as f:
+    with open("devices.json", "w") as f:
         json.dump(approved_devices, f, ensure_ascii=False, indent=4)
 
     print("Device removed successfully.")

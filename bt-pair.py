@@ -53,7 +53,7 @@ def main():
 
         # write info to paired devices json file
         try:
-            approved_devices = json.load("approved_devices.json")
+            approved_devices = json.load("devices.json")
         except FileNotFoundError:
             approved_devices = []
 
@@ -66,7 +66,7 @@ def main():
             }
         )
 
-        with open("approved_devices.json", "w") as f:
+        with open("devices.json", "w") as f:
             json.dump(approved_devices, f)
 
     except (IndexError, ValueError):

@@ -115,7 +115,7 @@ class Bluetoothctl:
 
 def get_approved_devices():
     try:
-        with open("approved_devices.json") as f:
+        with open("devices.json") as f:
             return json.load(f)
     except FileNotFoundError:
         return []
