@@ -118,7 +118,6 @@ app.layout = dbc.Container(
                                     color="primary",
                                     className="me-1",
                                 ),
-                                html.Div(id="email-status"),
                             ]
                         ),
                         width=12,
@@ -126,6 +125,7 @@ app.layout = dbc.Container(
                 ),
             ],
         ),
+        html.Div(id="email-status"),
         html.Div(
             id="auth-content",
             style={"display": "none"},
@@ -155,7 +155,6 @@ app.layout = dbc.Container(
                                 html.Div(id="device-status"),
                             ]
                         ),
-                        html.Div(id="device-status"),
                     ],
                     className="mb-3",
                 ),
@@ -201,6 +200,10 @@ app.layout = dbc.Container(
 )
 def handle_send_link(n_clicks, email):
     if n_clicks > 0 and email:
+        # load users from the JSON file
+        users = load_json("users.json")
+        if email not in users:
+            return "Email not found in the database.", {"display": "block"}
         token = generate_and_save_token(email)
         send_magic_link(email, token)
         return "Magic link sent! Check your email.", {"display": "none"}
@@ -210,6 +213,7 @@ def handle_send_link(n_clicks, email):
 @app.callback(
     [
         Output("auth-content", "style"),
+        Output("login-form", "style", allow_duplicate=True),
         Output("login-status", "children"),
         Output("login-status", "is_open"),
         Output("apartment-number", "children"),
@@ -226,13 +230,26 @@ def manage_visibility(search):
         ):  # Token expiration check
             return (
                 {"display": "block"},
+                {"display": "none"},
                 f"Logged in as {details['email']}.",
                 True,
                 details["apartment_number"],
             )
         else:
-            return {"display": "none"}, "Your magic link has expired.", True, ""
-    return {"display": "none"}, "Invalid or expired token.", True, ""
+            return (
+                {"display": "none"},
+                {"display": "initial"},
+                "Your magic link has expired.",
+                True,
+                "",
+            )
+    return (
+        {"display": "none"},
+        {"display": "initial"},
+        "Invalid or expired token.",
+        True,
+        "",
+    )
 
 
 # Device and PIN submission callbacks
@@ -254,6 +271,8 @@ def submit_device_data(n_clicks, mac, label, search):
             and int(time.time()) - tokens[token]["token_created_at"] < 3600
         ):
             devices = load_json("devices.json")
+            if not devices:
+                devices = []
             devices.append(
                 {
                     "label": label,
@@ -281,6 +300,8 @@ def submit_pin_data(n_clicks, pin, search):
             and int(time.time()) - tokens[token]["token_created_at"] < 3600
         ):
             pins = load_json("pins.json")
+            if not pins:
+                pins = {}
             apartment_number = tokens[token]["apartment_number"]
             hashed_pin = hash_secret(pin, apartment_number)
             entry = {
