@@ -81,45 +81,50 @@ def send_magic_link(email, token):
 app.layout = dbc.Container(
     [
         dcc.Location(id="url", refresh=False),
-        dbc.Row(
-            dbc.Col(
-                html.Div(
-                    [
-                        html.H1(
-                            "Welcome to Your Smart Device Manager",
-                            className="text-center",
+        html.Div(
+            id="login-form",
+            children=[
+                dbc.Row(
+                    dbc.Col(
+                        html.Div(
+                            [
+                                html.H1(
+                                    "Welcome to Your Smart Device Manager",
+                                    className="text-center",
+                                ),
+                                html.P(
+                                    "Manage your devices and security settings efficiently.",
+                                    className="text-center",
+                                ),
+                            ]
                         ),
-                        html.P(
-                            "Manage your devices and security settings efficiently.",
-                            className="text-center",
-                        ),
-                    ]
+                        width=12,
+                    )
                 ),
-                width=12,
-            )
-        ),
-        dbc.Row(
-            dbc.Col(
-                dbc.Form(
-                    [
-                        dbc.Input(
-                            id="email-input",
-                            placeholder="Enter your email",
-                            type="email",
-                            className="mb-2",
+                dbc.Row(
+                    dbc.Col(
+                        dbc.Form(
+                            [
+                                dbc.Input(
+                                    id="email-input",
+                                    placeholder="Enter your email",
+                                    type="email",
+                                    className="mb-2",
+                                ),
+                                dbc.Button(
+                                    "Send Magic Link",
+                                    id="send-link-btn",
+                                    n_clicks=0,
+                                    color="primary",
+                                    className="me-1",
+                                ),
+                                html.Div(id="email-status"),
+                            ]
                         ),
-                        dbc.Button(
-                            "Send Magic Link",
-                            id="send-link-btn",
-                            n_clicks=0,
-                            color="primary",
-                            className="me-1",
-                        ),
-                        html.Div(id="email-status"),
-                    ]
+                        width=12,
+                    )
                 ),
-                width=12,
-            )
+            ],
         ),
         html.Div(
             id="auth-content",
@@ -190,15 +195,16 @@ app.layout = dbc.Container(
 
 # Callbacks to handle user interactions and data processing
 @app.callback(
-    Output("email-status", "children"),
+    [Output("email-status", "children"), Output("login-form", "style")],
     [Input("send-link-btn", "n_clicks")],
     [State("email-input", "value")],
 )
 def handle_send_link(n_clicks, email):
     if n_clicks > 0 and email:
         token = generate_and_save_token(email)
-        return send_magic_link(email, token)
-    return ""
+        send_magic_link(email, token)
+        return "Magic link sent! Check your email.", {"display": "none"}
+    return "", {"display": "block"}
 
 
 @app.callback(
@@ -206,6 +212,7 @@ def handle_send_link(n_clicks, email):
         Output("auth-content", "style"),
         Output("login-status", "children"),
         Output("login-status", "is_open"),
+        Output("apartment-number", "children"),
     ],
     [Input("url", "search")],
     prevent_initial_call=True,
@@ -217,10 +224,15 @@ def manage_visibility(search):
         if (
             int(time.time()) - details["token_created_at"] < 3600
         ):  # Token expiration check
-            return {"display": "block"}, f"Logged in as {details['email']}.", True
+            return (
+                {"display": "block"},
+                f"Logged in as {details['email']}.",
+                True,
+                details["apartment_number"],
+            )
         else:
-            return {"display": "none"}, "Your magic link has expired.", True
-    return {"display": "none"}, "Invalid or expired token.", True
+            return {"display": "none"}, "Your magic link has expired.", True, ""
+    return {"display": "none"}, "Invalid or expired token.", True, ""
 
 
 # Device and PIN submission callbacks
