@@ -28,6 +28,11 @@ app = Dash(
 tokens = {}
 
 
+def hash_secret(username, token):
+    salted_token = f"{username}{token}"
+    return hashlib.sha256(salted_token.encode("utf-8")).hexdigest()
+
+
 def load_json(filename):
     try:
         with open(filename, "r") as file:
@@ -42,20 +47,15 @@ def save_json(filename, data):
         json.dump(data, file, indent=4)
 
 
-def hash_secret(pin, salt):
-    salted_pin = f"{salt}{pin}"
-    return hashlib.sha256(salted_pin.encode("utf-8")).hexdigest()
-
-
-def generate_and_save_token(email):
-    token = token_urlsafe(16)
+def generate_and_save_web_app_token(email):
+    token_web = token_urlsafe(16)
     user_details = load_json("users.json").get(email, {})
-    tokens[token] = {
+    tokens[hash_secret("", token_web)] = {
         "email": email,
         "token_created_at": int(time.time()),
         "apartment_number": user_details.get("apartment_number", "00"),
     }
-    return token
+    return token_web
 
 
 def send_magic_link(email, token):
@@ -72,7 +72,8 @@ def send_magic_link(email, token):
             },
             Source=sender,
         )
-        return "Magic link sent! Check your email."
+        print(f"Email sent! {response}")
+        return "Magic link sent! Check your email and click the link to log in."
     except ClientError as e:
         logging.error(f"Failed to send email: {e}")
         return "Failed to send email."
@@ -89,11 +90,11 @@ app.layout = dbc.Container(
                         html.Div(
                             [
                                 html.H1(
-                                    "Welcome to Your Smart Device Manager",
+                                    "House Access Control System",
                                     className="text-center",
                                 ),
                                 html.P(
-                                    "Manage your devices and security settings efficiently.",
+                                    "Manage your devices and security settings.",
                                     className="text-center",
                                 ),
                             ]
@@ -104,12 +105,12 @@ app.layout = dbc.Container(
                 dbc.Row(
                     dbc.Col(
                         dbc.Form(
-                            [
+                            children=[
                                 dbc.Input(
                                     id="email-input",
                                     placeholder="Enter your email",
                                     type="email",
-                                    className="mb-2",
+                                    className="mb-2 text-center",
                                 ),
                                 dbc.Button(
                                     "Send Magic Link",
@@ -118,14 +119,17 @@ app.layout = dbc.Container(
                                     color="primary",
                                     className="me-1",
                                 ),
-                            ]
+                            ],
+                            className="d-flex flex-column align-items-center",
                         ),
-                        width=12,
-                    )
+                        width=3,
+                    ),
+                    # align the form to the center
+                    className="d-flex justify-content-center",
                 ),
             ],
         ),
-        html.Div(id="email-status"),
+        html.Div(id="email-status", className="text-center mt-5"),
         html.Div(
             id="auth-content",
             style={"display": "none"},
@@ -204,7 +208,7 @@ def handle_send_link(n_clicks, email):
         users = load_json("users.json")
         if email not in users:
             return "Email not found in the database.", {"display": "block"}
-        token = generate_and_save_token(email)
+        token = generate_and_save_web_app_token(email)
         send_magic_link(email, token)
         return "Magic link sent! Check your email.", {"display": "none"}
     return "", {"display": "block"}
@@ -222,18 +226,23 @@ def handle_send_link(n_clicks, email):
     prevent_initial_call=True,
 )
 def manage_visibility(search):
-    token = search.split("=")[1] if search else None
-    if token and token in tokens:
-        details = tokens[token]
+    token_web_user_supplied = search.split("=")[1] if search else None
+    token_web_user_supplied_hashed = hash_secret("", token_web_user_supplied)
+    if token_web_user_supplied and token_web_user_supplied_hashed in tokens:
+        users = load_json("users.json")
         if (
-            int(time.time()) - details["token_created_at"] < 3600
+            int(time.time())
+            - tokens[token_web_user_supplied_hashed]["token_created_at"]
+            < 3600
         ):  # Token expiration check
             return (
                 {"display": "block"},
                 {"display": "none"},
-                f"Logged in as {details['email']}.",
+                f"Logged in as {tokens[token_web_user_supplied_hashed]['email']}.",
                 True,
-                details["apartment_number"],
+                users[tokens[token_web_user_supplied_hashed]["email"]][
+                    "apartment_number"
+                ],
             )
         else:
             return (
