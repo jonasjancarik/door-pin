@@ -90,11 +90,16 @@ app.layout = dbc.Container(
                         html.Div(
                             [
                                 html.H1(
-                                    "House Access Control System",
+                                    os.getenv(
+                                        "WEB_APP_TITLE", "House Access Control System"
+                                    ),
                                     className="text-center",
                                 ),
                                 html.P(
-                                    "Manage your devices and security settings.",
+                                    os.getenv(
+                                        "WEB_APP_SUBTITLE",
+                                        "Manage your devices and security settings.",
+                                    ),
                                     className="text-center",
                                 ),
                             ]
@@ -133,6 +138,7 @@ app.layout = dbc.Container(
         html.Div(
             id="auth-content",
             style={"display": "none"},
+            className="mt-5",
             children=[
                 dbc.Alert(id="login-status", color="info", is_open=False),
                 dbc.Card(
