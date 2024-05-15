@@ -9,14 +9,17 @@ import os
 load_dotenv()
 
 # config
-RELAY_PIN = os.getenv("RELAY_PIN", 18)
+try:
+    RELAY_PIN = int(os.getenv("RELAY_PIN"))
+except ValueError:
+    raise ValueError("RELAY_PIN must be an integer")
 RELAY_ACTIVATION_TIME = 0.5  # seconds
 
 if os.getenv("RELAY_ACTIVE_STATE", "HIGH") not in {"HIGH", "LOW"}:
     raise ValueError("RELAY_ACTIVE_STATE must be either HIGH or LOW")
 
 RELAY_ACTIVE_STATE = (
-    GPIO.HIGH if os.getenv("RELAY_ACTIVE_STATE", "HIGH") == "HIGH" else GPIO.LOW
+    GPIO.HIGH if os.getenv("RELAY_ACTIVE_STATE") == "HIGH" else GPIO.LOW
 )
 
 # GPIO setup
