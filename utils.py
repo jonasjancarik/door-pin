@@ -3,21 +3,32 @@ import time
 import hashlib
 import pexpect
 import json
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 # config
-RELAY_PIN = 18
+RELAY_PIN = os.getenv("RELAY_PIN", 18)
 RELAY_ACTIVATION_TIME = 0.5  # seconds
+
+if os.getenv("RELAY_ACTIVE_STATE", "HIGH") not in {"HIGH", "LOW"}:
+    raise ValueError("RELAY_ACTIVE_STATE must be either HIGH or LOW")
+
+RELAY_ACTIVE_STATE = (
+    GPIO.HIGH if os.getenv("RELAY_ACTIVE_STATE", "HIGH") == "HIGH" else GPIO.LOW
+)
 
 # GPIO setup
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(RELAY_PIN, GPIO.OUT)
-GPIO.output(RELAY_PIN, GPIO.LOW)
+GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
 
 
 def unlock_door():
-    GPIO.output(RELAY_PIN, GPIO.HIGH)
+    GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
     time.sleep(RELAY_ACTIVATION_TIME)
-    GPIO.output(RELAY_PIN, GPIO.LOW)
+    GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
 
 
 def hash_secret(username, token):
