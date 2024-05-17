@@ -25,13 +25,17 @@ RELAY_ACTIVE_STATE = (
 # GPIO setup
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(RELAY_PIN, GPIO.OUT)
-GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
+GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)  # deactivate first
+GPIO.cleanup()  # cleanup to avoid issues with previous runs
 
 
 def unlock_door():
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(RELAY_PIN, GPIO.OUT)
     GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
     time.sleep(RELAY_ACTIVATION_TIME)
     GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
+    GPIO.cleanup()
 
 
 def hash_secret(username, token):
