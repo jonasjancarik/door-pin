@@ -10,9 +10,9 @@ load_dotenv()
 
 # config
 try:
-    RELAY_PIN = int(os.getenv("RELAY_PIN"))
+    RELAY_PIN = int(os.getenv("RELAY_PIN", 18))
 except ValueError:
-    raise ValueError("RELAY_PIN must be an integer")
+    os.exit("RELAY_PIN must be an integer")
 RELAY_ACTIVATION_TIME = 0.5  # seconds
 
 if os.getenv("RELAY_ACTIVE_STATE", "HIGH") not in {"HIGH", "LOW"}:
