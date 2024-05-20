@@ -1,4 +1,4 @@
-from dash import Dash, html, dcc, Input, Output, State
+from dash import Dash, html, dcc, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
 import json
 import hashlib
@@ -10,7 +10,14 @@ from dotenv import load_dotenv
 import os
 import logging
 from secrets import token_urlsafe
-from flask import request, Response
+from flask import request
+
+try:
+    from utils import unlock_door
+except ImportError:
+
+    def unlock_door():
+        print("Door unlocked successfully.")
 
 
 # Load environment variables
@@ -143,64 +150,84 @@ app.layout = dbc.Container(
             className="mt-5",
             children=[
                 dbc.Alert(id="login-status", color="info", is_open=False),
-                dbc.Card(
-                    [
-                        dbc.CardHeader("Device Registration"),
-                        dbc.CardBody(
+                dbc.Button(
+                    "Unlock Door",
+                    id="unlock-door-btn",
+                    color="danger",
+                    className="mb-3",
+                ),
+                dbc.Button(
+                    "Settings", id="settings-btn", color="primary", className="mb-3"
+                ),
+                dbc.Button(
+                    "Logout", id="logout-btn", color="secondary", className="mb-3"
+                ),
+                html.Div(id="unlock-status", className="mb-3"),
+                html.Div(
+                    id="settings-content",
+                    style={"display": "none"},
+                    children=[
+                        dbc.Card(
                             [
-                                dbc.Input(
-                                    id="mac-input",
-                                    placeholder="Enter MAC address",
-                                    type="text",
+                                dbc.CardHeader("Device Registration"),
+                                dbc.CardBody(
+                                    [
+                                        dbc.Input(
+                                            id="mac-input",
+                                            placeholder="Enter MAC address",
+                                            type="text",
+                                        ),
+                                        dbc.Input(
+                                            id="label-input",
+                                            placeholder="Enter device label",
+                                            type="text",
+                                        ),
+                                        dbc.Button(
+                                            "Submit Device",
+                                            id="submit-device-btn",
+                                            n_clicks=0,
+                                            color="success",
+                                        ),
+                                        html.Div(id="device-status"),
+                                    ]
                                 ),
-                                dbc.Input(
-                                    id="label-input",
-                                    placeholder="Enter device label",
-                                    type="text",
+                            ],
+                            className="mb-3",
+                        ),
+                        dbc.Card(
+                            [
+                                dbc.CardHeader("PIN Registration"),
+                                dbc.CardBody(
+                                    [
+                                        dbc.InputGroup(
+                                            [
+                                                dbc.InputGroupText(
+                                                    id="apartment-number",
+                                                    className="fw-bold",
+                                                ),
+                                                dbc.Input(
+                                                    id="pin-input",
+                                                    placeholder="Enter PIN",
+                                                    type="password",
+                                                ),
+                                            ]
+                                        ),
+                                        dbc.Button(
+                                            "Submit PIN",
+                                            id="submit-pin-btn",
+                                            n_clicks=0,
+                                            color="warning",
+                                        ),
+                                        html.Div(id="pin-status"),
+                                    ]
                                 ),
-                                dbc.Button(
-                                    "Submit Device",
-                                    id="submit-device-btn",
-                                    n_clicks=0,
-                                    color="success",
-                                ),
-                                html.Div(id="device-status"),
                             ]
                         ),
                     ],
-                    className="mb-3",
-                ),
-                dbc.Card(
-                    [
-                        dbc.CardHeader("PIN Registration"),
-                        dbc.CardBody(
-                            [
-                                dbc.InputGroup(
-                                    [
-                                        dbc.InputGroupText(
-                                            id="apartment-number", className="fw-bold"
-                                        ),
-                                        dbc.Input(
-                                            id="pin-input",
-                                            placeholder="Enter PIN",
-                                            type="password",
-                                        ),
-                                    ]
-                                ),
-                                dbc.Button(
-                                    "Submit PIN",
-                                    id="submit-pin-btn",
-                                    n_clicks=0,
-                                    color="warning",
-                                ),
-                                html.Div(id="pin-status"),
-                            ]
-                        ),
-                    ]
                 ),
             ],
         ),
-        html.Div(id="dash_app_context", style={"display": "none"}),
+        dcc.Store(id="dash_app_context", storage_type="session"),
     ]
 )
 
@@ -222,68 +249,80 @@ def handle_send_link(n_clicks, email):
     return "", {"display": "block"}
 
 
+def get_token_from_url(search):
+    token = search.split("=")[1] if search else None
+    return token if token != "logout" else None
+
+
+def get_hashed_token(token):
+    return hash_secret("", token) if token else None
+
+
 @app.callback(
     [
         Output("auth-content", "style"),
         Output("login-form", "style", allow_duplicate=True),
         Output("login-status", "children"),
         Output("login-status", "is_open"),
+        Output("login-status", "color"),
         Output("apartment-number", "children"),
-        Output(
-            "dash_app_context", "response"
-        ),  # Additional output for response manipulation
+        Output("settings-content", "style", allow_duplicate=True),
+        Output("dash_app_context", "data"),
     ],
-    [Input("url", "search")],
+    [Input("url", "search"), Input("logout-btn", "n_clicks")],
+    [State("url", "pathname")],
     prevent_initial_call=True,
 )
-def manage_visibility(search):
-    ctx = app.callback_context
+def manage_visibility(search, n_clicks, pathname):
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
-    token_web_user_supplied = search.split("=")[1] if search else None
-    # Check token from URL or cookie
-    token_web_user_supplied_hashed = hash_secret("", token_web_user_supplied)
-    cookie_token = request.cookies.get("web_app_token", None)
-    cookie_token_hashed = hash_secret("", cookie_token) if cookie_token else None
+    if triggered_id == "logout-btn" and n_clicks:
+        return (
+            {"display": "none"},
+            {"display": "block"},
+            "You have been logged out.",
+            True,
+            "success",
+            "",
+            {"display": "none"},
+            None,
+        )
+    else:
+        token_web_user_supplied = get_token_from_url(search)
+        token_web_user_supplied_hashed = get_hashed_token(token_web_user_supplied)
+        cookie_token = request.cookies.get("web_app_token", None)
+        cookie_token_hashed = get_hashed_token(cookie_token)
 
-    token_to_use = (
-        token_web_user_supplied_hashed
-        if token_web_user_supplied_hashed in tokens
-        else cookie_token_hashed
-    )
+        token_to_use = (
+            token_web_user_supplied_hashed
+            if token_web_user_supplied_hashed in tokens
+            else cookie_token_hashed
+        )
 
-    if token_to_use and token_to_use in tokens:
-        user_token_info = tokens[token_to_use]
-        if (
-            int(time.time()) - user_token_info["token_created_at"] < 3600
-        ):  # Token expiration check
-            response = Response()
-            response.set_cookie("web_app_token", token_web_user_supplied, max_age=3600)
-            ctx.response = response  # Assign the response to the callback context
+        if token_to_use and token_to_use in tokens:
+            user_token_info = tokens[token_to_use]
+            response = {"web_app_token": token_web_user_supplied}
             return (
                 {"display": "block"},
                 {"display": "none"},
                 f"Logged in as {user_token_info['email']}.",
                 True,
+                "info",
                 user_token_info["apartment_number"],
-                ctx.response,  # Return the modified response
+                {"display": "none"},
+                response,
             )
         else:
             return (
                 {"display": "none"},
-                {"display": "initial"},
-                "Your magic link has expired.",
-                True,
+                {"display": "block"},
                 "",
-                None,  # No response changes
+                False,
+                "info",
+                "",
+                {"display": "none"},
+                None,
             )
-    return (
-        {"display": "none"},
-        {"display": "initial"},
-        "Invalid or expired token.",
-        True,
-        "",
-        None,  # No response changes
-    )
 
 
 # Device and PIN submission callbacks
@@ -299,11 +338,7 @@ def manage_visibility(search):
 def submit_device_data(n_clicks, mac, label, search):
     if n_clicks > 0:
         token = search.split("=")[1] if search else None
-        if (
-            token
-            and token in tokens
-            and int(time.time()) - tokens[token]["token_created_at"] < 3600
-        ):
+        if token and token in tokens:
             devices = load_json("devices.json")
             if not devices:
                 devices = []
@@ -328,11 +363,7 @@ def submit_device_data(n_clicks, mac, label, search):
 def submit_pin_data(n_clicks, pin, search):
     if n_clicks > 0:
         token = search.split("=")[1] if search else None
-        if (
-            token
-            and token in tokens
-            and int(time.time()) - tokens[token]["token_created_at"] < 3600
-        ):
+        if token and token in tokens:
             pins = load_json("pins.json")
             if not pins:
                 pins = {}
@@ -350,6 +381,66 @@ def submit_pin_data(n_clicks, pin, search):
             save_json("pins.json", pins)
             return "PIN successfully registered."
         return "Session has expired. Please log in again."
+
+
+@app.callback(
+    Output("url", "href"),
+    [Input("logout-btn", "n_clicks")],
+    [State("url", "search")],
+    prevent_initial_call=True,
+)
+def handle_logout(n_clicks, search):
+    token = search.split("=")[1] if search else None
+    if token:
+        token_hashed = hash_secret("", token)
+        if token_hashed in tokens:
+            del tokens[token_hashed]
+    ctx.response.delete_cookie("web_app_token")
+    return "/?token=logout"
+
+
+@app.callback(
+    Output("unlock-status", "children"),
+    [Input("unlock-door-btn", "n_clicks")],
+    prevent_initial_call=True,
+)
+def handle_unlock_door(n_clicks):
+    if n_clicks > 0:
+        try:
+            unlock_door()
+            return "Door unlocked successfully."
+        except Exception as e:
+            return f"Error unlocking door: {str(e)}"
+
+
+@app.callback(
+    Output("settings-content", "style"),
+    [Input("settings-btn", "n_clicks")],
+    [State("settings-content", "style")],
+)
+def toggle_settings(n_clicks, current_style):
+    if n_clicks:
+        if current_style["display"] == "none":
+            return {"display": "block"}
+        else:
+            return {"display": "none"}
+    return current_style
+
+
+@app.callback(
+    Output("dash_app_context", "clear_data"),
+    [Input("dash_app_context", "data")],
+    prevent_initial_call=True,
+)
+def set_cookie(response):
+    if response:
+        token_web_user_supplied = response.get("web_app_token")
+        if token_web_user_supplied:
+            ctx.response.set_cookie(
+                "web_app_token", token_web_user_supplied, max_age=315360000
+            )  # Set cookie to expire in 10 years
+            return True  # Clear the data after setting the cookie
+    return False  # No need to clear the data if response is None
 
 
 if __name__ == "__main__":
