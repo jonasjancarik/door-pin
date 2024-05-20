@@ -90,7 +90,7 @@ class Bluetoothctl:
         return devices
 
     def list_paired_devices(self, scan_duration=10):
-        """List paired devices by scanning and filtering output."""
+        """List paired devices."""
         output = self.get_output("paired-devices", 1)
         devices = []
         for line in output:
