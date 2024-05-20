@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 import os
 import logging
 from secrets import token_urlsafe
+from flask import request, Response
+
 
 # Load environment variables
 load_dotenv()
@@ -198,6 +200,7 @@ app.layout = dbc.Container(
                 ),
             ],
         ),
+        html.Div(id="dash_app_context", style={"display": "none"}),
     ]
 )
 
@@ -215,8 +218,7 @@ def handle_send_link(n_clicks, email):
         if email not in users:
             return "Email not found in the database.", {"display": "block"}
         token = generate_and_save_web_app_token(email)
-        send_magic_link(email, token)
-        return "Magic link sent! Check your email.", {"display": "none"}
+        return send_magic_link(email, token), {"display": "none"}
     return "", {"display": "block"}
 
 
@@ -227,28 +229,43 @@ def handle_send_link(n_clicks, email):
         Output("login-status", "children"),
         Output("login-status", "is_open"),
         Output("apartment-number", "children"),
+        Output(
+            "dash_app_context", "response"
+        ),  # Additional output for response manipulation
     ],
     [Input("url", "search")],
     prevent_initial_call=True,
 )
 def manage_visibility(search):
+    ctx = app.callback_context
+
     token_web_user_supplied = search.split("=")[1] if search else None
+    # Check token from URL or cookie
     token_web_user_supplied_hashed = hash_secret("", token_web_user_supplied)
-    if token_web_user_supplied and token_web_user_supplied_hashed in tokens:
-        users = load_json("users.json")
+    cookie_token = request.cookies.get("web_app_token", None)
+    cookie_token_hashed = hash_secret("", cookie_token) if cookie_token else None
+
+    token_to_use = (
+        token_web_user_supplied_hashed
+        if token_web_user_supplied_hashed in tokens
+        else cookie_token_hashed
+    )
+
+    if token_to_use and token_to_use in tokens:
+        user_token_info = tokens[token_to_use]
         if (
-            int(time.time())
-            - tokens[token_web_user_supplied_hashed]["token_created_at"]
-            < 3600
+            int(time.time()) - user_token_info["token_created_at"] < 3600
         ):  # Token expiration check
+            response = Response()
+            response.set_cookie("web_app_token", token_web_user_supplied, max_age=3600)
+            ctx.response = response  # Assign the response to the callback context
             return (
                 {"display": "block"},
                 {"display": "none"},
-                f"Logged in as {tokens[token_web_user_supplied_hashed]['email']}.",
+                f"Logged in as {user_token_info['email']}.",
                 True,
-                users[tokens[token_web_user_supplied_hashed]["email"]][
-                    "apartment_number"
-                ],
+                user_token_info["apartment_number"],
+                ctx.response,  # Return the modified response
             )
         else:
             return (
@@ -257,6 +274,7 @@ def manage_visibility(search):
                 "Your magic link has expired.",
                 True,
                 "",
+                None,  # No response changes
             )
     return (
         {"display": "none"},
@@ -264,6 +282,7 @@ def manage_visibility(search):
         "Invalid or expired token.",
         True,
         "",
+        None,  # No response changes
     )
 
 
