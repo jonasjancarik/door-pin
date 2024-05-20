@@ -17,7 +17,7 @@ try:
 except ImportError:
 
     def unlock_door():
-        print("Door unlocked successfully.")
+        print("Couldn't import the unlock_door function, using a placeholder instead.")
 
 
 # Load environment variables
@@ -31,6 +31,7 @@ app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
+    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
 
 # Token and session management
@@ -88,147 +89,211 @@ def send_magic_link(email, token):
         return "Failed to send email."
 
 
-app.layout = dbc.Container(
+# Define the app layout
+app.layout = html.Div(
     [
         dcc.Location(id="url", refresh=False),
-        html.Div(
-            id="login-form",
-            children=[
-                dbc.Row(
-                    dbc.Col(
-                        html.Div(
-                            [
-                                html.H1(
+        dbc.Navbar(
+            dbc.Container(
+                [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                dbc.NavbarBrand(
                                     os.getenv(
                                         "WEB_APP_TITLE", "House Access Control System"
                                     ),
-                                    className="text-center",
+                                    className="text-white",
+                                )
+                            ),
+                        ],
+                        align="center",
+                        className="g-0",
+                    ),
+                    dbc.NavbarToggler(id="navbar-toggler"),
+                    dbc.Collapse(
+                        dbc.Nav(
+                            [
+                                dbc.NavItem(
+                                    dbc.NavLink(
+                                        os.getenv(
+                                            "WEB_APP_SUBTITLE",
+                                            "Manage your devices and security settings.",
+                                        ),
+                                        className="text-white",
+                                    )
                                 ),
-                                html.P(
-                                    os.getenv(
-                                        "WEB_APP_SUBTITLE",
-                                        "Manage your devices and security settings.",
-                                    ),
-                                    className="text-center",
+                                dbc.NavItem(
+                                    dbc.NavLink(
+                                        "Settings",
+                                        id="settings-btn",
+                                        n_clicks=0,
+                                        className="text-white",
+                                        style={"cursor": "pointer"},
+                                    )
                                 ),
-                            ]
+                                dbc.NavItem(
+                                    dbc.NavLink(
+                                        "Logout",
+                                        id="logout-btn",
+                                        n_clicks=0,
+                                        className="text-white",
+                                        style={"cursor": "pointer"},
+                                    )
+                                ),
+                            ],
+                            navbar=True,
+                            className="ml-auto",
                         ),
-                        width=12,
-                    )
-                ),
+                        id="navbar-collapse",
+                        navbar=True,
+                    ),
+                ]
+            ),
+            color="dark",
+            dark=True,
+            sticky="top",
+        ),
+        dbc.Container(
+            [
                 dbc.Row(
-                    dbc.Col(
-                        dbc.Form(
-                            children=[
+                    [
+                        dbc.Col(
+                            [
+                                html.Div(
+                                    id="login-form",
+                                    children=[
+                                        dbc.Form(
+                                            [
+                                                dbc.Input(
+                                                    id="email-input",
+                                                    placeholder="Enter your email",
+                                                    type="email",
+                                                    className="mb-2 text-center",
+                                                ),
+                                                dbc.Button(
+                                                    "Send Magic Link",
+                                                    id="send-link-btn",
+                                                    n_clicks=0,
+                                                    color="primary",
+                                                    className="mb-2 w-100",
+                                                    style={"cursor": "pointer"},
+                                                ),
+                                            ],
+                                            className="d-flex flex-column align-items-center",
+                                        ),
+                                        html.Div(
+                                            id="email-status",
+                                            className="text-center mt-3",
+                                        ),
+                                    ],
+                                    className="mt-5",
+                                ),
+                                html.Div(
+                                    id="auth-content",
+                                    style={"display": "none"},
+                                    children=[
+                                        dbc.Alert(
+                                            id="login-status",
+                                            color="info",
+                                            is_open=False,
+                                        ),
+                                        dbc.Button(
+                                            "Unlock Door",
+                                            id="unlock-door-btn",
+                                            color="danger",
+                                            className="my-3 w-100",
+                                            style={
+                                                "width": "90%",
+                                                "margin": "auto",
+                                                "cursor": "pointer",
+                                            },
+                                        ),
+                                        html.Div(id="unlock-status", className="mb-3"),
+                                    ],
+                                    className="mt-5",
+                                ),
+                            ],
+                            width=12,
+                            className="d-flex flex-column align-items-center justify-content-center",
+                        )
+                    ],
+                    className="flex-grow-1",
+                ),
+                dbc.Modal(
+                    [
+                        dbc.ModalHeader("Settings"),
+                        dbc.ModalBody(
+                            [
+                                html.H4("Device Registration", className="mb-3"),
                                 dbc.Input(
-                                    id="email-input",
-                                    placeholder="Enter your email",
-                                    type="email",
-                                    className="mb-2 text-center",
+                                    id="mac-input",
+                                    placeholder="Enter MAC address",
+                                    type="text",
+                                    className="mb-2",
+                                ),
+                                dbc.Input(
+                                    id="label-input",
+                                    placeholder="Enter device label",
+                                    type="text",
+                                    className="mb-2",
                                 ),
                                 dbc.Button(
-                                    "Send Magic Link",
-                                    id="send-link-btn",
+                                    "Submit Device",
+                                    id="submit-device-btn",
                                     n_clicks=0,
-                                    color="primary",
-                                    className="me-1",
+                                    color="success",
+                                    className="mb-4 w-100",
+                                    style={"cursor": "pointer"},
                                 ),
-                            ],
-                            className="d-flex flex-column align-items-center",
-                        ),
-                        width=3,
-                    ),
-                    # align the form to the center
-                    className="d-flex justify-content-center",
-                ),
-            ],
-        ),
-        html.Div(id="email-status", className="text-center mt-5"),
-        html.Div(
-            id="auth-content",
-            style={"display": "none"},
-            className="mt-5",
-            children=[
-                dbc.Alert(id="login-status", color="info", is_open=False),
-                dbc.Button(
-                    "Unlock Door",
-                    id="unlock-door-btn",
-                    color="danger",
-                    className="mb-3",
-                ),
-                dbc.Button(
-                    "Settings", id="settings-btn", color="primary", className="mb-3"
-                ),
-                dbc.Button(
-                    "Logout", id="logout-btn", color="secondary", className="mb-3"
-                ),
-                html.Div(id="unlock-status", className="mb-3"),
-                html.Div(
-                    id="settings-content",
-                    style={"display": "none"},
-                    children=[
-                        dbc.Card(
-                            [
-                                dbc.CardHeader("Device Registration"),
-                                dbc.CardBody(
+                                html.Div(id="device-status"),
+                                html.H4("PIN Registration", className="mb-3"),
+                                dbc.InputGroup(
                                     [
-                                        dbc.Input(
-                                            id="mac-input",
-                                            placeholder="Enter MAC address",
-                                            type="text",
+                                        dbc.InputGroupText(
+                                            id="apartment-number", className="fw-bold"
                                         ),
                                         dbc.Input(
-                                            id="label-input",
-                                            placeholder="Enter device label",
-                                            type="text",
+                                            id="pin-input",
+                                            placeholder="Enter PIN",
+                                            type="password",
                                         ),
-                                        dbc.Button(
-                                            "Submit Device",
-                                            id="submit-device-btn",
-                                            n_clicks=0,
-                                            color="success",
-                                        ),
-                                        html.Div(id="device-status"),
-                                    ]
+                                    ],
+                                    className="mb-2",
                                 ),
-                            ],
-                            className="mb-3",
-                        ),
-                        dbc.Card(
-                            [
-                                dbc.CardHeader("PIN Registration"),
-                                dbc.CardBody(
-                                    [
-                                        dbc.InputGroup(
-                                            [
-                                                dbc.InputGroupText(
-                                                    id="apartment-number",
-                                                    className="fw-bold",
-                                                ),
-                                                dbc.Input(
-                                                    id="pin-input",
-                                                    placeholder="Enter PIN",
-                                                    type="password",
-                                                ),
-                                            ]
-                                        ),
-                                        dbc.Button(
-                                            "Submit PIN",
-                                            id="submit-pin-btn",
-                                            n_clicks=0,
-                                            color="warning",
-                                        ),
-                                        html.Div(id="pin-status"),
-                                    ]
+                                dbc.Button(
+                                    "Submit PIN",
+                                    id="submit-pin-btn",
+                                    n_clicks=0,
+                                    color="warning",
+                                    className="w-100",
+                                    style={"cursor": "pointer"},
                                 ),
+                                html.Div(id="pin-status"),
                             ]
                         ),
+                        dbc.ModalFooter(
+                            dbc.Button(
+                                "Close",
+                                id="close-settings-btn",
+                                color="secondary",
+                                n_clicks=0,
+                                style={"cursor": "pointer"},
+                            )
+                        ),
                     ],
+                    id="settings-modal",
+                    is_open=False,
+                    centered=True,
+                    className="modal-lg",
                 ),
+                dcc.Store(id="dash_app_context", storage_type="session"),
             ],
+            fluid=True,
+            className="bg-light d-flex flex-column flex-grow-1",
         ),
-        dcc.Store(id="dash_app_context", storage_type="session"),
-    ]
+    ],
+    className="d-flex flex-column vh-100",
 )
 
 
@@ -266,7 +331,6 @@ def get_hashed_token(token):
         Output("login-status", "is_open"),
         Output("login-status", "color"),
         Output("apartment-number", "children"),
-        Output("settings-content", "style", allow_duplicate=True),
         Output("dash_app_context", "data"),
     ],
     [Input("url", "search"), Input("logout-btn", "n_clicks")],
@@ -284,7 +348,6 @@ def manage_visibility(search, n_clicks, pathname):
             True,
             "success",
             "",
-            {"display": "none"},
             None,
         )
     else:
@@ -309,7 +372,6 @@ def manage_visibility(search, n_clicks, pathname):
                 True,
                 "info",
                 user_token_info["apartment_number"],
-                {"display": "none"},
                 response,
             )
         else:
@@ -320,7 +382,6 @@ def manage_visibility(search, n_clicks, pathname):
                 False,
                 "info",
                 "",
-                {"display": "none"},
                 None,
             )
 
@@ -414,27 +475,36 @@ def handle_unlock_door(n_clicks):
 
 
 @app.callback(
-    Output("settings-content", "style"),
-    [Input("settings-btn", "n_clicks")],
-    [State("settings-content", "style")],
+    Output("settings-modal", "is_open"),
+    [Input("settings-btn", "n_clicks"), Input("close-settings-btn", "n_clicks")],
+    [State("settings-modal", "is_open")],
 )
-def toggle_settings(n_clicks, current_style):
+def toggle_settings_modal(open_clicks, close_clicks, is_open):
+    if open_clicks or close_clicks:
+        return not is_open
+    return is_open
+
+
+@app.callback(
+    Output("navbar-collapse", "is_open"),
+    [Input("navbar-toggler", "n_clicks")],
+    [State("navbar-collapse", "is_open")],
+)
+def toggle_navbar(n_clicks, is_open):
     if n_clicks:
-        if current_style["display"] == "none":
-            return {"display": "block"}
-        else:
-            return {"display": "none"}
-    return current_style
+        return not is_open
+    return is_open
 
 
 @app.callback(
     Output("dash_app_context", "clear_data"),
     [Input("dash_app_context", "data")],
+    [State("url", "search")],
     prevent_initial_call=True,
 )
-def set_cookie(response):
+def set_cookie(response, search):
+    token_web_user_supplied = get_token_from_url(search)
     if response:
-        token_web_user_supplied = response.get("web_app_token")
         if token_web_user_supplied:
             ctx.response.set_cookie(
                 "web_app_token", token_web_user_supplied, max_age=315360000
