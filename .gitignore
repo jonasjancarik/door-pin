@@ -4,6 +4,9 @@ tokens.json
 devices.json
 users.json
 
+# Ignore mock raspberry pi module for local development
+RPi
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
