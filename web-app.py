@@ -11,6 +11,9 @@ from flask import request
 from pin import create_pin
 from device import add_device
 from utils import unlock_door, hash_secret, load_data, save_data
+from urllib.parse import parse_qs
+import random
+
 
 # Load environment variables
 load_dotenv()
@@ -50,26 +53,29 @@ def generate_and_save_web_app_token(email, apartment_number):
     return token_web
 
 
-def authenticate(search=None):
-    token = get_token_from_url(search)
-    cookie_token = request.cookies.get("web_app_token", None)
-    token_to_use = (
-        token or cookie_token
-    )  # Use the token from the URL if present, prefer that over the cookie
-
-    if not token_to_use:
-        return False
-
-    hashed_token = hash_secret(token_to_use)
-
+def authenticate(login_code=None, web_app_token=None):
     data = load_data()
 
-    for apartment_number, apartment_data in data["apartments"].items():
-        for user in apartment_data["users"]:
-            for token in user.get("tokens", []):
-                if token["hash"] == hashed_token and token["expiration"] > int(
-                    time.time()
-                ):
+    if login_code:
+        login_code_hash = hash_secret(login_code)
+        for apartment_number, apartment_data in data["apartments"].items():
+            for user in apartment_data["users"]:
+                for code in user.get("login_codes", []):
+                    if code["hash"] == login_code_hash and code["expiration"] > int(
+                        time.time()
+                    ):
+                        user["login_codes"].remove(code)
+                        save_data(data)
+                        return {
+                            "apartment_number": apartment_number,
+                            "email": user["email"],
+                            "name": user["name"],
+                        }
+    elif web_app_token:
+        hashed_token = hash_secret(web_app_token)
+        for apartment_number, apartment_data in data["apartments"].items():
+            for user in apartment_data["users"]:
+                if hashed_token in user.get("token_hashes", []):
                     return {
                         "apartment_number": apartment_number,
                         "email": user["email"],
@@ -78,11 +84,11 @@ def authenticate(search=None):
     return False
 
 
-def send_magic_link(email, token):
+def send_magic_link(email, login_code):
     ses_client = boto3.client("ses", region_name=os.getenv("AWS_REGION"))
     sender = os.getenv("AWS_SES_SENDER_EMAIL")
-    subject = "Your Magic Link"
-    body_html = f"""<html><body><h1>Your Magic Link</h1><p>Please use this link to access the app:</p><a href='http://localhost:8050?token={token}'>Access the App</a></body></html>"""
+    subject = "Your Login Code"
+    body_html = f"""<html><body><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='http://localhost:8050?login_code={login_code}'>Log In</a></p></body></html>"""
     try:
         response = ses_client.send_email(
             Destination={"ToAddresses": [email]},
@@ -93,7 +99,7 @@ def send_magic_link(email, token):
             Source=sender,
         )
         print(f"Email sent! {response}")
-        return "Magic link sent! Check your email and click the link to log in."
+        return "A login code has been sent to your email. Please enter the code below or click the link in the email."
     except ClientError as e:
         logging.error(f"Failed to send email: {e}")
         return "Failed to send email."
@@ -173,31 +179,53 @@ app.layout = html.Div(
                                 html.Div(
                                     id="login-form",
                                     children=[
-                                        dbc.Form(
-                                            [
-                                                dbc.Input(
-                                                    id="email-input",
-                                                    placeholder="Enter your email",
-                                                    type="email",
-                                                    className="mb-2 text-center",
-                                                ),
-                                                dbc.Button(
-                                                    "Send Magic Link",
-                                                    id="send-link-btn",
-                                                    n_clicks=0,
-                                                    color="primary",
-                                                    className="mb-2 w-100",
-                                                    style={"cursor": "pointer"},
+                                        html.Div(
+                                            id="email-form",
+                                            children=[
+                                                dbc.Form(
+                                                    [
+                                                        dbc.Input(
+                                                            id="email-input",
+                                                            placeholder="Enter your email",
+                                                            type="email",
+                                                            className="mb-2 text-center",
+                                                        ),
+                                                        dbc.Button(
+                                                            "Send Login Code",
+                                                            id="send-link-btn",
+                                                            n_clicks=0,
+                                                            color="primary",
+                                                            className="mb-2 w-100",
+                                                            style={"cursor": "pointer"},
+                                                        ),
+                                                    ],
+                                                    className="d-flex flex-column align-items-center",
                                                 ),
                                             ],
-                                            className="d-flex flex-column align-items-center",
                                         ),
                                         html.Div(
-                                            id="email-status",
-                                            className="text-center mt-3",
+                                            id="code-form",
+                                            style={"display": "none"},
+                                            children=[
+                                                html.Div(
+                                                    id="email-status",
+                                                    className="text-center",
+                                                ),
+                                                dbc.Form(
+                                                    [
+                                                        dbc.Input(
+                                                            id="login-code-input",
+                                                            placeholder="Enter login code",
+                                                            type="text",
+                                                            className="mb-2 text-center",
+                                                        ),
+                                                    ],
+                                                    className="d-flex flex-column align-items-center mt-3",
+                                                ),
+                                            ],
                                         ),
                                     ],
-                                    className="mt-5",
+                                    className="w-100",
                                 ),
                                 html.Div(
                                     id="auth-content",
@@ -221,11 +249,10 @@ app.layout = html.Div(
                                         ),
                                         html.Div(id="unlock-status", className="mb-3"),
                                     ],
-                                    className="mt-5",
+                                    className="w-100",
                                 ),
                             ],
-                            width=12,
-                            className="d-flex flex-column align-items-center justify-content-center",
+                            className="d-flex flex-column align-items-center justify-content-center col-sm-10 col-lg-4 col-xl-3 mx-auto",
                         )
                     ],
                     className="flex-grow-1",
@@ -309,7 +336,11 @@ app.layout = html.Div(
 
 # Callbacks to handle user interactions and data processing
 @app.callback(
-    [Output("email-status", "children"), Output("login-form", "style")],
+    [
+        Output("email-status", "children"),
+        Output("email-form", "style"),
+        Output("code-form", "style"),
+    ],
     [Input("send-link-btn", "n_clicks")],
     [State("email-input", "value")],
 )
@@ -319,15 +350,34 @@ def handle_send_link(n_clicks, email):
         for apartment_number, apartment_data in data["apartments"].items():
             for user in apartment_data["users"]:
                 if user["email"] == email:
-                    token = generate_and_save_web_app_token(email, apartment_number)
-                    return send_magic_link(email, token), {"display": "none"}
-        return "Email not found in the database.", {"display": "block"}
-    return "", {"display": "block"}
+                    login_code = "".join(random.choices("0123456789", k=6))
+                    user.setdefault("login_codes", []).append(
+                        {
+                            "hash": hash_secret(login_code),
+                            "expiration": int(time.time()) + 300,
+                        }  # 5 minutes expiration
+                    )
+                    save_data(data)
+                    return (
+                        send_magic_link(email, login_code),
+                        {"display": "none"},
+                        {"display": "block"},
+                    )
+        return (
+            "Email not found in the database.",
+            {"display": "block"},
+            {"display": "none"},
+        )
+    return "", {"display": "block"}, {"display": "none"}
 
 
-def get_token_from_url(search):
-    token = search.split("=")[1] if search else None
-    return token if token != "logout" else None
+def get_login_code_from_url(search):
+    if not search:
+        return None
+
+    query_params = parse_qs(search.lstrip("?"))
+    login_code = query_params.get("login_code", [None])[0]
+    return login_code if login_code != "logout" else None
 
 
 @app.callback(
@@ -340,11 +390,21 @@ def get_token_from_url(search):
         Output("apartment-number", "children"),
         Output("dash_app_context", "data"),
     ],
-    [Input("url", "search"), Input("logout-btn", "n_clicks")],
+    [
+        Input("url", "search"),
+        Input("logout-btn", "n_clicks"),
+        Input("login-code-input", "value"),
+        # Input("submit-login-code-btn", "n_clicks"),
+    ],
     [State("url", "pathname")],
     prevent_initial_call=True,
 )
-def manage_visibility(search, n_clicks, pathname):
+def manage_visibility(
+    search,
+    n_clicks,
+    login_code_input,
+    pathname,
+):
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if triggered_id == "logout-btn" and n_clicks:
@@ -358,7 +418,16 @@ def manage_visibility(search, n_clicks, pathname):
             None,
         )
     else:
-        if user := authenticate(search=search):
+        login_code_from_url = parse_qs(search.lstrip("?")).get("login_code", [None])[0]
+        login_code_entered = login_code_input
+        login_code = login_code_entered or login_code_from_url
+
+        if user := authenticate(
+            login_code=login_code, web_app_token=request.cookies.get("web_app_token")
+        ):
+            web_app_token = generate_and_save_web_app_token(
+                user["email"], user["apartment_number"]
+            )
             return (
                 {"display": "block"},
                 {"display": "none"},
@@ -366,10 +435,7 @@ def manage_visibility(search, n_clicks, pathname):
                 True,
                 "info",
                 user["apartment_number"],
-                {
-                    "web_app_token": get_token_from_url(search)
-                    or request.cookies.get("web_app_token")
-                },
+                {"web_app_token": web_app_token},
             )
 
         return (
@@ -431,7 +497,7 @@ def handle_logout(n_clicks, search):
     data = load_data()
     try:
         token_hashed = hash_secret(
-            get_token_from_url(search) or request.cookies.get("web_app_token")
+            get_login_code_from_url(search) or request.cookies.get("web_app_token")
         )
     except ValueError:
         return "/"
@@ -489,7 +555,7 @@ def toggle_navbar(n_clicks, is_open):
     prevent_initial_call=True,
 )
 def set_cookie(response, search):
-    token_web_user_supplied = get_token_from_url(search)
+    token_web_user_supplied = get_login_code_from_url(search)
     if response:
         if token_web_user_supplied:
             ctx.response.set_cookie(
