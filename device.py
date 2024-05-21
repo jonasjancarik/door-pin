@@ -5,6 +5,55 @@ import sys
 bt = utils.Bluetoothctl()
 
 
+def load_devices():
+    """Load device data from the JSON file."""
+    try:
+        with open("devices.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return []
+
+
+def save_devices(devices):
+    """Save device data to the JSON file."""
+    with open("devices.json", "w") as file:
+        json.dump(devices, file, indent=4)
+
+
+def add_device(label, owner, mac):
+    """Add a new device."""
+    devices = load_devices()
+    devices.append(
+        {
+            "label": label,
+            "owner": owner,
+            "mac": mac,
+        }
+    )
+    save_devices(devices)
+    print("Device added successfully.")
+
+
+def remove_device(mac):
+    """Remove a device by its MAC address."""
+    devices = load_devices()
+    updated_devices = [device for device in devices if device["mac"] != mac]
+    if len(updated_devices) < len(devices):
+        save_devices(updated_devices)
+        print("Device removed successfully.")
+    else:
+        print("Device not found.")
+
+
+def list_devices():
+    """List all registered devices."""
+    devices = load_devices()
+    for device in devices:
+        print(
+            f"Label: {device['label']}, Owner: {device['owner']}, MAC: {device['mac']}"
+        )
+
+
 def add_paired():
     paired_devices = bt.list_paired_devices()
 

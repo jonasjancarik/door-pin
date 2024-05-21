@@ -2,7 +2,6 @@ from dash import Dash, html, dcc, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
 import json
 import hashlib
-import datetime
 import time
 import boto3
 from botocore.exceptions import ClientError
@@ -11,14 +10,9 @@ import os
 import logging
 from secrets import token_urlsafe
 from flask import request
-
-try:
-    from utils import unlock_door
-except ImportError:
-
-    def unlock_door():
-        print("Couldn't import the unlock_door function, using a placeholder instead.")
-
+from pin import create_pin, delete_pin, list_pins, load_pins, save_pins
+from device import add_device, remove_device, list_devices
+from utils import unlock_door
 
 # Load environment variables
 load_dotenv()
@@ -388,6 +382,24 @@ def manage_visibility(search, n_clicks, pathname):
 
 # Device and PIN submission callbacks
 @app.callback(
+    Output("pin-status", "children"),
+    [Input("submit-pin-btn", "n_clicks")],
+    [State("pin-input", "value"), State("url", "search")],
+)
+def submit_pin_data(n_clicks, pin, search):
+    if n_clicks > 0:
+        token = search.split("=")[1] if search else None
+        if token and token in tokens:
+            pins = load_pins()
+            apartment_number = tokens[token]["apartment_number"]
+            creator_name = tokens[token]["email"]
+            create_pin(pins, apartment_number, pin, creator_name)
+            save_pins(pins)
+            return "PIN successfully registered."
+        return "Session has expired. Please log in again."
+
+
+@app.callback(
     Output("device-status", "children"),
     [Input("submit-device-btn", "n_clicks")],
     [
@@ -400,47 +412,9 @@ def submit_device_data(n_clicks, mac, label, search):
     if n_clicks > 0:
         token = search.split("=")[1] if search else None
         if token and token in tokens:
-            devices = load_json("devices.json")
-            if not devices:
-                devices = []
-            devices.append(
-                {
-                    "label": label,
-                    "owner": tokens[token]["email"],
-                    "mac": mac,
-                    "name": label,
-                }
-            )
-            save_json("devices.json", devices)
+            owner = tokens[token]["email"]
+            add_device(label, owner, mac)
             return "Device successfully registered."
-        return "Session has expired. Please log in again."
-
-
-@app.callback(
-    Output("pin-status", "children"),
-    [Input("submit-pin-btn", "n_clicks")],
-    [State("pin-input", "value"), State("url", "search")],
-)
-def submit_pin_data(n_clicks, pin, search):
-    if n_clicks > 0:
-        token = search.split("=")[1] if search else None
-        if token and token in tokens:
-            pins = load_json("pins.json")
-            if not pins:
-                pins = {}
-            apartment_number = tokens[token]["apartment_number"]
-            hashed_pin = hash_secret(pin, apartment_number)
-            entry = {
-                "hashed_pin": hashed_pin,
-                "creator": tokens[token]["email"],
-                "created_at": datetime.datetime.now().isoformat(),
-            }
-            if apartment_number in pins:
-                pins[apartment_number].append(entry)
-            else:
-                pins[apartment_number] = [entry]
-            save_json("pins.json", pins)
-            return "PIN successfully registered."
         return "Session has expired. Please log in again."
 
 
