@@ -58,6 +58,8 @@ class Bluetoothctl:
             # self.child.expect(r"\[bluetooth\]#", timeout=10)  # todo: fix expect
         except (pexpect.EOF, pexpect.TIMEOUT) as e:
             raise BluetoothctlError("Error starting bluetoothctl: " + str(e))
+        except Exception as e:  # todo - this is meant only for local development without bluetoothctl, find a better solution
+            print(e)
 
     def get_output(self, command, pause=1):
         """Send a command to bluetoothctl prompt and return the output."""
