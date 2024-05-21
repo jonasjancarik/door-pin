@@ -38,9 +38,27 @@ def unlock_door():
     GPIO.cleanup()
 
 
-def hash_secret(username, token):
-    salted_token = f"{username}{token}"
-    return hashlib.sha256(salted_token.encode("utf-8")).hexdigest()
+def hash_secret(payload=None, salt=None):
+    """
+    Hashes the given payload using SHA256 algorithm.
+
+    Args:
+        payload (str): The payload to be hashed.
+        salt (str): The salt to be added to the payload before hashing.
+
+    Returns:
+        str: The hashed value of the payload.
+
+    Raises:
+        ValueError: If neither payload nor salt is provided.
+    """
+    if salt and payload:
+        string_to_hash = f"{salt}{payload}"
+    elif payload:
+        string_to_hash = payload
+    else:
+        raise ValueError("At least the payload must be provided.")
+    return hashlib.sha256(string_to_hash.encode("utf-8")).hexdigest()
 
 
 class BluetoothctlError(Exception):
@@ -139,3 +157,16 @@ def get_approved_devices():
             return json.load(f)
     except FileNotFoundError:
         return []
+
+
+def load_data():
+    try:
+        with open("data.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {"apartments": {}}
+
+
+def save_data(data):
+    with open("data.json", "w") as file:
+        json.dump(data, file, indent=4)

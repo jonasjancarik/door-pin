@@ -77,7 +77,7 @@ def main():
                                 if user:
                                     user_pin_hashes = [x["hashed_pin"] for x in user]
                                     if (
-                                        utils.hash_secret(user_id, pin)
+                                        utils.hash_secret(salt=user_id, payload=pin)
                                         in user_pin_hashes
                                     ):
                                         open_door()

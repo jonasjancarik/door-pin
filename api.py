@@ -18,7 +18,7 @@ def load_tokens():
 @app.get("/door/unlock/")
 def api_unlock_door(username: str, token: str):
     tokens = load_tokens()
-    hashed_token = utils.hash_secret(username, token)
+    hashed_token = utils.hash_secret(salt=username, payload=token)
     if tokens.get(username)["hashed_token"] == hashed_token:
         try:
             utils.unlock_door()

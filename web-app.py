@@ -1,18 +1,16 @@
 from dash import Dash, html, dcc, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
-import json
-import hashlib
-import time
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
+import time
 import os
 import logging
 from secrets import token_urlsafe
 from flask import request
-from pin import create_pin, delete_pin, list_pins, load_pins, save_pins
-from device import add_device, remove_device, list_devices
-from utils import unlock_door
+from pin import create_pin
+from device import add_device
+from utils import unlock_door, hash_secret, load_data, save_data
 
 # Load environment variables
 load_dotenv()
@@ -28,38 +26,56 @@ app = Dash(
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
 
-# Token and session management
-tokens = {}
 
-
-def hash_secret(username, token):
-    salted_token = f"{username}{token}"
-    return hashlib.sha256(salted_token.encode("utf-8")).hexdigest()
-
-
-def load_json(filename):
-    try:
-        with open(filename, "r") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        logging.error(f"File {filename} not found. Starting with an empty dataset.")
-        return {} if filename.endswith(".json") else []
-
-
-def save_json(filename, data):
-    with open(filename, "w") as file:
-        json.dump(data, file, indent=4)
-
-
-def generate_and_save_web_app_token(email):
+def generate_and_save_web_app_token(email, apartment_number):
     token_web = token_urlsafe(16)
-    user_details = load_json("users.json").get(email, {})
-    tokens[hash_secret("", token_web)] = {
-        "email": email,
-        "token_created_at": int(time.time()),
-        "apartment_number": user_details.get("apartment_number", "00"),
-    }
+    hashed_token = hash_secret(token_web)
+
+    data = load_data()
+    for user in data["apartments"][apartment_number]["users"]:
+        if user["email"] == email:
+            user_tokens = user.setdefault("tokens", [])
+            user_tokens.append(
+                {
+                    "hash": hashed_token,
+                    "expiration": int(time.time()) + 31536000,
+                }  # 1 year expiration
+            )
+            break
+    else:
+        data["apartments"][apartment_number]["users"].append(
+            {"email": email, "name": email, "token_hashes": [hashed_token]}
+        )
+    save_data(data)
     return token_web
+
+
+def authenticate(search=None):
+    token = get_token_from_url(search)
+    cookie_token = request.cookies.get("web_app_token", None)
+    token_to_use = (
+        token or cookie_token
+    )  # Use the token from the URL if present, prefer that over the cookie
+
+    if not token_to_use:
+        return False
+
+    hashed_token = hash_secret(token_to_use)
+
+    data = load_data()
+
+    for apartment_number, apartment_data in data["apartments"].items():
+        for user in apartment_data["users"]:
+            for token in user.get("tokens", []):
+                if token["hash"] == hashed_token and token["expiration"] > int(
+                    time.time()
+                ):
+                    return {
+                        "apartment_number": apartment_number,
+                        "email": user["email"],
+                        "name": user["name"],
+                    }
+    return False
 
 
 def send_magic_link(email, token):
@@ -299,22 +315,19 @@ app.layout = html.Div(
 )
 def handle_send_link(n_clicks, email):
     if n_clicks > 0 and email:
-        # load users from the JSON file
-        users = load_json("users.json")
-        if email not in users:
-            return "Email not found in the database.", {"display": "block"}
-        token = generate_and_save_web_app_token(email)
-        return send_magic_link(email, token), {"display": "none"}
+        data = load_data()
+        for apartment_number, apartment_data in data["apartments"].items():
+            for user in apartment_data["users"]:
+                if user["email"] == email:
+                    token = generate_and_save_web_app_token(email, apartment_number)
+                    return send_magic_link(email, token), {"display": "none"}
+        return "Email not found in the database.", {"display": "block"}
     return "", {"display": "block"}
 
 
 def get_token_from_url(search):
     token = search.split("=")[1] if search else None
     return token if token != "logout" else None
-
-
-def get_hashed_token(token):
-    return hash_secret("", token) if token else None
 
 
 @app.callback(
@@ -345,39 +358,29 @@ def manage_visibility(search, n_clicks, pathname):
             None,
         )
     else:
-        token_web_user_supplied = get_token_from_url(search)
-        token_web_user_supplied_hashed = get_hashed_token(token_web_user_supplied)
-        cookie_token = request.cookies.get("web_app_token", None)
-        cookie_token_hashed = get_hashed_token(cookie_token)
-
-        token_to_use = (
-            token_web_user_supplied_hashed
-            if token_web_user_supplied_hashed in tokens
-            else cookie_token_hashed
-        )
-
-        if token_to_use and token_to_use in tokens:
-            user_token_info = tokens[token_to_use]
-            response = {"web_app_token": token_web_user_supplied}
+        if user := authenticate(search=search):
             return (
                 {"display": "block"},
                 {"display": "none"},
-                f"Logged in as {user_token_info['email']}.",
+                f"Logged in as {user['name']}.",
                 True,
                 "info",
-                user_token_info["apartment_number"],
-                response,
+                user["apartment_number"],
+                {
+                    "web_app_token": get_token_from_url(search)
+                    or request.cookies.get("web_app_token")
+                },
             )
-        else:
-            return (
-                {"display": "none"},
-                {"display": "block"},
-                "",
-                False,
-                "info",
-                "",
-                None,
-            )
+
+        return (
+            {"display": "none"},
+            {"display": "block"},
+            "",
+            False,
+            "info",
+            "",
+            None,
+        )
 
 
 # Device and PIN submission callbacks
@@ -388,13 +391,13 @@ def manage_visibility(search, n_clicks, pathname):
 )
 def submit_pin_data(n_clicks, pin, search):
     if n_clicks > 0:
-        token = search.split("=")[1] if search else None
-        if token and token in tokens:
-            pins = load_pins()
-            apartment_number = tokens[token]["apartment_number"]
-            creator_name = tokens[token]["email"]
-            create_pin(pins, apartment_number, pin, creator_name)
-            save_pins(pins)
+        if user := authenticate(search):
+            apartment_number = user["apartment_number"]
+            creator_email = user["email"]
+            label = (
+                f"PIN {len(load_data()['apartments'][apartment_number]['pins']) + 1}"
+            )
+            create_pin(apartment_number, pin, creator_email, label)
             return "PIN successfully registered."
         return "Session has expired. Please log in again."
 
@@ -410,10 +413,10 @@ def submit_pin_data(n_clicks, pin, search):
 )
 def submit_device_data(n_clicks, mac, label, search):
     if n_clicks > 0:
-        token = search.split("=")[1] if search else None
-        if token and token in tokens:
-            owner = tokens[token]["email"]
-            add_device(label, owner, mac)
+        if user := authenticate(search):
+            apartment_number = user["apartment_number"]
+            creator_email = user["email"]
+            add_device(apartment_number, label, creator_email, mac)
             return "Device successfully registered."
         return "Session has expired. Please log in again."
 
@@ -425,11 +428,20 @@ def submit_device_data(n_clicks, mac, label, search):
     prevent_initial_call=True,
 )
 def handle_logout(n_clicks, search):
-    token = search.split("=")[1] if search else None
-    if token:
-        token_hashed = hash_secret("", token)
-        if token_hashed in tokens:
-            del tokens[token_hashed]
+    data = load_data()
+    try:
+        token_hashed = hash_secret(
+            get_token_from_url(search) or request.cookies.get("web_app_token")
+        )
+    except ValueError:
+        return "/"
+    for apartment_number, apartment_data in data["apartments"].items():
+        for user in apartment_data["users"]:
+            for token in user.get("tokens", []):
+                if token["hash"] == token_hashed:
+                    user["tokens"].remove(token)
+                    save_data(data)
+                    break
     ctx.response.delete_cookie("web_app_token")
     return "/?token=logout"
 

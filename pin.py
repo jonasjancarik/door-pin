@@ -1,38 +1,34 @@
+import utils
 import json
 import datetime
-import utils
 
 
-def load_pins():
-    """Load PIN data from the JSON file."""
+def load_data():
     try:
-        with open("pins.json", "r") as file:
+        with open("data.json", "r") as file:
             return json.load(file)
     except FileNotFoundError:
-        return {}
+        return {"apartments": {}}
 
 
-def save_pins(pins):
-    """Save PIN data to the JSON file."""
-    with open("pins.json", "w") as file:
-        json.dump(pins, file, indent=4)
+def save_data(data):
+    with open("data.json", "w") as file:
+        json.dump(data, file, indent=4)
 
 
-def create_pin(pins):
-    """Create a new PIN entry."""
-    apartment_number = input("Enter apartment number (two digits): ")
-    pin = input("Enter PIN (four digits): ")
-    creator_name = input("Enter your name: ")
-    hashed_pin = utils.hash_secret(apartment_number, pin)
+def create_pin(apartment_number, pin, creator_email, label):
+    data = load_data()
+    hashed_pin = utils.hash_secret(salt=apartment_number, payload=pin)
     entry = {
+        "label": label,
         "hashed_pin": hashed_pin,
-        "creator": creator_name,
+        "creator_email": creator_email,
         "created_at": datetime.datetime.now().isoformat(),
     }
-    if apartment_number in pins:
-        pins[apartment_number].append(entry)
-    else:
-        pins[apartment_number] = [entry]
+    if apartment_number not in data["apartments"]:
+        data["apartments"][apartment_number] = {"users": [], "pins": [], "devices": []}
+    data["apartments"][apartment_number]["pins"].append(entry)
+    save_data(data)
     print(f"New PIN for apartment number {apartment_number} stored.")
 
 
@@ -66,23 +62,23 @@ def list_pins(pins):
 
 
 def main():
-    pins = load_pins()
+    data = load_data()
     while True:
         print("\n1. Create PIN\n2. Delete PIN\n3. List PINs\n4. Exit")
         choice = input("Enter your choice: ")
         if choice == "1":
-            create_pin(pins)
+            create_pin(data)
         elif choice == "2":
-            delete_pin(pins)
+            delete_pin(data)
         elif choice == "3":
-            list_pins(pins)
+            list_pins(data)
         elif choice == "4":
-            save_pins(pins)
+            save_data(data)
             print("Exiting...")
             break
         else:
             print("Invalid choice, please try again.")
-        save_pins(pins)  # Save after every operation
+        save_data(data)  # Save after every operation
 
 
 if __name__ == "__main__":

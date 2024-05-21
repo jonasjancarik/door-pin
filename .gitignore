@@ -3,6 +3,7 @@ pins.json
 tokens.json
 devices.json
 users.json
+data.json
 
 # Ignore mock raspberry pi module for local development
 RPi
