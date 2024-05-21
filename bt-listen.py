@@ -10,9 +10,7 @@ approved_devices_by_mac = {
 }
 
 while True:
-    devices = bt.list_available_devices(
-        scan_duration=11
-    )  # todo: lists all known devices, not just the nearby ones
+    devices = bt.list_available_devices(scan_duration=11)
 
     if not devices:
         continue
