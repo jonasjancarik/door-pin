@@ -1,4 +1,4 @@
-from dash import Dash, html, dcc, Input, Output, State, ctx
+from dash import Dash, html, dcc, Input, Output, State, ctx, ALL
 import dash_bootstrap_components as dbc
 import boto3
 from botocore.exceptions import ClientError
@@ -28,6 +28,10 @@ app = Dash(
     suppress_callback_exceptions=True,
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
+
+
+def random_index():
+    return random.randint(0, 999999)
 
 
 def generate_and_save_web_app_token(email, apartment_number):
@@ -71,16 +75,19 @@ def authenticate(login_code=None, web_app_token=None):
                             "email": user["email"],
                             "name": user["name"],
                         }
-    elif web_app_token:
+    if web_app_token:
         hashed_token = hash_secret(web_app_token)
         for apartment_number, apartment_data in data["apartments"].items():
             for user in apartment_data["users"]:
-                if hashed_token in user.get("token_hashes", []):
-                    return {
-                        "apartment_number": apartment_number,
-                        "email": user["email"],
-                        "name": user["name"],
-                    }
+                for token in user.get("tokens", []):
+                    if hashed_token == token["hash"] and token["expiration"] > int(
+                        time.time()
+                    ):
+                        return {
+                            "apartment_number": apartment_number,
+                            "email": user["email"],
+                            "name": user["name"],
+                        }
     return False
 
 
@@ -139,23 +146,49 @@ app.layout = html.Div(
                                         className="text-white",
                                     )
                                 ),
-                                dbc.NavItem(
-                                    dbc.NavLink(
-                                        "Settings",
-                                        id="settings-btn",
-                                        n_clicks=0,
-                                        className="text-white",
-                                        style={"cursor": "pointer"},
-                                    )
+                                html.Div(
+                                    dbc.NavItem(
+                                        dbc.NavLink(
+                                            "Settings",
+                                            id="settings-btn",
+                                            n_clicks=0,
+                                            className="text-white",
+                                            style={"cursor": "pointer"},
+                                        ),
+                                    ),
+                                    className="show-logged-in d-none",
+                                    id={
+                                        "type": "toggle-element",
+                                        "index": random_index(),
+                                    },
                                 ),
-                                dbc.NavItem(
-                                    dbc.NavLink(
-                                        "Logout",
-                                        id="logout-btn",
-                                        n_clicks=0,
-                                        className="text-white",
-                                        style={"cursor": "pointer"},
-                                    )
+                                html.Div(
+                                    dbc.NavItem(
+                                        dbc.NavLink(
+                                            id="user-display", className="text-white"
+                                        )
+                                    ),
+                                    className="show-logged-in d-none",
+                                    id={
+                                        "type": "toggle-element",
+                                        "index": random_index(),
+                                    },
+                                ),
+                                html.Div(
+                                    dbc.NavItem(
+                                        dbc.NavLink(
+                                            "(Logout)",
+                                            id="logout-btn",
+                                            n_clicks=0,
+                                            className="text-white",
+                                            style={"cursor": "pointer"},
+                                        )
+                                    ),
+                                    className="show-logged-in d-none",
+                                    id={
+                                        "type": "toggle-element",
+                                        "index": random_index(),
+                                    },
                                 ),
                             ],
                             navbar=True,
@@ -177,59 +210,66 @@ app.layout = html.Div(
                         dbc.Col(
                             [
                                 html.Div(
-                                    id="login-form",
                                     children=[
                                         html.Div(
-                                            id="email-form",
-                                            children=[
-                                                dbc.Form(
-                                                    [
-                                                        dbc.Input(
-                                                            id="email-input",
-                                                            placeholder="Enter your email",
-                                                            type="email",
-                                                            className="mb-2 text-center",
-                                                        ),
-                                                        dbc.Button(
-                                                            "Send Login Code",
-                                                            id="send-link-btn",
-                                                            n_clicks=0,
-                                                            color="primary",
-                                                            className="mb-2 w-100",
-                                                            style={"cursor": "pointer"},
-                                                        ),
-                                                    ],
-                                                    className="d-flex flex-column align-items-center",
-                                                ),
-                                            ],
-                                        ),
-                                        html.Div(
-                                            id="code-form",
-                                            style={"display": "none"},
+                                            id="login-form",
                                             children=[
                                                 html.Div(
-                                                    id="email-status",
-                                                    className="text-center",
-                                                ),
-                                                dbc.Form(
-                                                    [
-                                                        dbc.Input(
-                                                            id="login-code-input",
-                                                            placeholder="Enter login code",
-                                                            type="text",
-                                                            className="mb-2 text-center",
+                                                    id="email-form",
+                                                    children=[
+                                                        dbc.Form(
+                                                            [
+                                                                dbc.Input(
+                                                                    id="email-input",
+                                                                    placeholder="Enter your email",
+                                                                    type="email",
+                                                                    className="mb-2 text-center",
+                                                                ),
+                                                                dbc.Button(
+                                                                    "Send Login Code",
+                                                                    id="send-link-btn",
+                                                                    n_clicks=0,
+                                                                    color="primary",
+                                                                    className="mb-2 w-100",
+                                                                    style={
+                                                                        "cursor": "pointer"
+                                                                    },
+                                                                ),
+                                                            ],
+                                                            className="d-flex flex-column align-items-center",
                                                         ),
                                                     ],
-                                                    className="d-flex flex-column align-items-center mt-3",
+                                                ),
+                                                html.Div(
+                                                    id="code-form",
+                                                    children=[
+                                                        html.Div(
+                                                            id="email-status",
+                                                            className="text-center",
+                                                        ),
+                                                        dbc.Form(
+                                                            [
+                                                                dbc.Input(
+                                                                    id="login-code-input",
+                                                                    placeholder="Enter login code",
+                                                                    type="text",
+                                                                    className="mb-2 text-center",
+                                                                ),
+                                                            ],
+                                                            className="d-flex flex-column align-items-center mt-3",
+                                                        ),
+                                                    ],
                                                 ),
                                             ],
                                         ),
                                     ],
-                                    className="w-100",
+                                    className="toggle-element show-logged-out d-none",
+                                    id={
+                                        "type": "toggle-element",
+                                        "index": random_index(),
+                                    },
                                 ),
                                 html.Div(
-                                    id="auth-content",
-                                    style={"display": "none"},
                                     children=[
                                         dbc.Alert(
                                             id="login-status",
@@ -249,86 +289,110 @@ app.layout = html.Div(
                                         ),
                                         html.Div(id="unlock-status", className="mb-3"),
                                     ],
-                                    className="w-100",
+                                    className="toggle-element show-logged-in d-none",
+                                    id={
+                                        "type": "toggle-element",
+                                        "index": random_index(),
+                                    },
                                 ),
                             ],
                             className="d-flex flex-column align-items-center justify-content-center col-sm-10 col-lg-4 col-xl-3 mx-auto",
                         )
                     ],
                     className="flex-grow-1",
+                    id={
+                        "type": "toggle-element",
+                        "index": random_index(),
+                    },
                 ),
-                dbc.Modal(
-                    [
-                        dbc.ModalHeader("Settings"),
-                        dbc.ModalBody(
-                            [
-                                html.H4("Device Registration", className="mb-3"),
-                                dbc.Input(
-                                    id="mac-input",
-                                    placeholder="Enter MAC address",
-                                    type="text",
-                                    className="mb-2",
-                                ),
-                                dbc.Input(
-                                    id="label-input",
-                                    placeholder="Enter device label",
-                                    type="text",
-                                    className="mb-2",
-                                ),
+                html.Div(
+                    dbc.Modal(
+                        [
+                            dbc.ModalHeader("Settings"),
+                            dbc.ModalBody(
+                                [
+                                    html.H4("Device Registration", className="mb-3"),
+                                    dbc.Input(
+                                        id="mac-input",
+                                        placeholder="Enter MAC address",
+                                        type="text",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Input(
+                                        id="label-input",
+                                        placeholder="Enter device label",
+                                        type="text",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Button(
+                                        "Submit Device",
+                                        id="submit-device-btn",
+                                        n_clicks=0,
+                                        color="success",
+                                        className="mb-4 w-100",
+                                        style={"cursor": "pointer"},
+                                    ),
+                                    html.Div(id="device-status"),
+                                    html.H4("PIN Registration", className="mb-3"),
+                                    dbc.InputGroup(
+                                        [
+                                            dbc.InputGroupText(
+                                                id="apartment-number",
+                                                className="fw-bold",
+                                            ),
+                                            dbc.Input(
+                                                id="pin-input",
+                                                placeholder="Enter PIN",
+                                                type="password",
+                                            ),
+                                        ],
+                                        className="mb-2",
+                                    ),
+                                    dbc.Button(
+                                        "Submit PIN",
+                                        id="submit-pin-btn",
+                                        n_clicks=0,
+                                        color="warning",
+                                        className="w-100",
+                                        style={"cursor": "pointer"},
+                                    ),
+                                    html.Div(id="pin-status"),
+                                ]
+                            ),
+                            dbc.ModalFooter(
                                 dbc.Button(
-                                    "Submit Device",
-                                    id="submit-device-btn",
+                                    "Close",
+                                    id="close-settings-btn",
+                                    color="secondary",
                                     n_clicks=0,
-                                    color="success",
-                                    className="mb-4 w-100",
                                     style={"cursor": "pointer"},
-                                ),
-                                html.Div(id="device-status"),
-                                html.H4("PIN Registration", className="mb-3"),
-                                dbc.InputGroup(
-                                    [
-                                        dbc.InputGroupText(
-                                            id="apartment-number", className="fw-bold"
-                                        ),
-                                        dbc.Input(
-                                            id="pin-input",
-                                            placeholder="Enter PIN",
-                                            type="password",
-                                        ),
-                                    ],
-                                    className="mb-2",
-                                ),
-                                dbc.Button(
-                                    "Submit PIN",
-                                    id="submit-pin-btn",
-                                    n_clicks=0,
-                                    color="warning",
-                                    className="w-100",
-                                    style={"cursor": "pointer"},
-                                ),
-                                html.Div(id="pin-status"),
-                            ]
-                        ),
-                        dbc.ModalFooter(
-                            dbc.Button(
-                                "Close",
-                                id="close-settings-btn",
-                                color="secondary",
-                                n_clicks=0,
-                                style={"cursor": "pointer"},
-                            )
-                        ),
-                    ],
-                    id="settings-modal",
-                    is_open=False,
-                    centered=True,
-                    className="modal-lg",
+                                )
+                            ),
+                        ],
+                        id="settings-modal",
+                        is_open=False,
+                        centered=True,
+                        className="modal-lg",
+                    ),
+                    className="toggle-element show-logged-in d-none",
+                    id={"type": "toggle-element", "index": random_index()},
                 ),
-                dcc.Store(id="dash_app_context", storage_type="session"),
             ],
             fluid=True,
             className="bg-light d-flex flex-column flex-grow-1",
         ),
+        # Hidden div to store login state
+        html.Div(
+            id="login-state",
+            children="logged_out",
+            #  style={"display": "none"}
+        ),
+        # Hidden input to trigger callback on page load
+        dcc.Input(id="page-load-trigger", type="hidden", value="trigger"),
+        # Stores
+        dcc.Store(id="dash_app_context", storage_type="local"),
+        dcc.Store(id="authenticated", storage_type="local"),
+        dcc.Store(id="login-stage", storage_type="session", data="email-form"),
     ],
     className="d-flex flex-column vh-100",
 )
@@ -380,72 +444,130 @@ def get_login_code_from_url(search):
     return login_code if login_code != "logout" else None
 
 
+# Callback to show/hide elements based on login state using pattern-matching
+@app.callback(
+    Output({"type": "toggle-element", "index": ALL}, "className"),
+    [Input("login-state", "children"), Input("page-load-trigger", "value")],
+    [
+        State({"type": "toggle-element", "index": ALL}, "id"),
+        State({"type": "toggle-element", "index": ALL}, "className"),
+    ],
+)
+def update_element_visibility(login_state, trigger, ids, current_classes):
+    updated_classes = []
+    for i, element_id in enumerate(ids):
+        if (
+            current_classes[i] is None
+        ):  # this shouldn't happen because the element should have a class defining whether it should be shown or hidden
+            current_classes[i] = ""
+
+        class_to_add = None
+
+        # update the class list based on the login state and display class
+        if "show-logged-in" in current_classes[i]:
+            if login_state == "logged_in":
+                # remove d-none from the class list
+                current_classes[i] = current_classes[i].replace("d-none", "")
+            else:
+                class_to_add = "d-none"
+
+        elif "show-logged-out" in current_classes[i]:
+            if login_state == "logged_out":
+                # remove d-none from the class list
+                current_classes[i] = current_classes[i].replace("d-none", "")
+            else:
+                class_to_add = "d-none"
+
+        else:
+            updated_classes.append(current_classes[i])
+            continue
+
+        if class_to_add and class_to_add not in current_classes[i]:
+            updated_classes.append(current_classes[i] + " " + class_to_add)
+        else:
+            updated_classes.append(current_classes[i])
+
+    return updated_classes
+
+
 @app.callback(
     [
-        Output("auth-content", "style"),
-        Output("login-form", "style", allow_duplicate=True),
-        Output("login-status", "children"),
-        Output("login-status", "is_open"),
-        Output("login-status", "color"),
+        Output("login-state", "children"),
+        Output("user-display", "children"),
         Output("apartment-number", "children"),
+    ],
+    Input("authenticated", "data"),
+    State("dash_app_context", "data"),
+)
+def update_login_state(is_authenticated, dash_app_context):
+    if is_authenticated:
+        return (
+            "logged_in",
+            dash_app_context["user"]["name"],
+            dash_app_context["user"]["apartment_number"],
+        )
+    else:
+        return "logged_out", [], ""
+
+
+@app.callback(
+    Output("login-stage", "data"),
+    [Input("send-link-btn", "n_clicks"), Input("login-code-input", "n_submit")],
+    [State("login-stage", "data")],
+)
+def update_login_stage(send_link_clicks, code_input_submit, current_stage):
+    if send_link_clicks and current_stage == "email-form":
+        return "code-form"
+    if code_input_submit and current_stage == "code-form":
+        return "authenticated"
+    return current_stage
+
+
+@app.callback(
+    [
+        Output("authenticated", "data"),
         Output("dash_app_context", "data"),
     ],
     [
         Input("url", "search"),
         Input("logout-btn", "n_clicks"),
         Input("login-code-input", "value"),
-        # Input("submit-login-code-btn", "n_clicks"),
+        Input("dash_app_context", "data"),
     ],
-    [State("url", "pathname")],
-    prevent_initial_call=True,
 )
-def manage_visibility(
-    search,
-    n_clicks,
-    login_code_input,
-    pathname,
-):
+def handle_login(search, n_clicks, login_code_input, dash_app_context):
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if triggered_id == "logout-btn" and n_clicks:
         return (
-            {"display": "none"},
-            {"display": "block"},
-            "You have been logged out.",
-            True,
-            "success",
-            "",
-            None,
+            False,
+            {"web_app_token": None},
         )
     else:
-        login_code_from_url = parse_qs(search.lstrip("?")).get("login_code", [None])[0]
+        login_code_from_url = parse_qs(search.lstrip("?")).get("login_code", [None])[
+            0
+        ]  # todo: we have a function for that - which can maybe be replaced by this
         login_code_entered = login_code_input
         login_code = login_code_entered or login_code_from_url
+        web_app_token = (
+            dash_app_context.get("web_app_token") if dash_app_context else None
+        )
 
-        if user := authenticate(
-            login_code=login_code, web_app_token=request.cookies.get("web_app_token")
-        ):
-            web_app_token = generate_and_save_web_app_token(
-                user["email"], user["apartment_number"]
-            )
+        if user := authenticate(login_code=login_code, web_app_token=web_app_token):
             return (
-                {"display": "block"},
-                {"display": "none"},
-                f"Logged in as {user['name']}.",
                 True,
-                "info",
-                user["apartment_number"],
-                {"web_app_token": web_app_token},
+                {
+                    "web_app_token": web_app_token
+                    or generate_and_save_web_app_token(
+                        user["email"], user["apartment_number"]
+                    ),
+                    "user": user,
+                },
             )
 
         return (
-            {"display": "none"},
-            {"display": "block"},
-            "",
             False,
-            "info",
-            "",
-            None,
+            {"web_app_token": None},
         )
 
 
@@ -548,21 +670,21 @@ def toggle_navbar(n_clicks, is_open):
     return is_open
 
 
-@app.callback(
-    Output("dash_app_context", "clear_data"),
-    [Input("dash_app_context", "data")],
-    [State("url", "search")],
-    prevent_initial_call=True,
-)
-def set_cookie(response, search):
-    token_web_user_supplied = get_login_code_from_url(search)
-    if response:
-        if token_web_user_supplied:
-            ctx.response.set_cookie(
-                "web_app_token", token_web_user_supplied, max_age=315360000
-            )  # Set cookie to expire in 10 years
-            return True  # Clear the data after setting the cookie
-    return False  # No need to clear the data if response is None
+# @app.callback(
+#     Output("dash_app_context", "clear_data"),
+#     [Input("dash_app_context", "data")],
+#     [State("url", "search")],
+#     prevent_initial_call=True,
+# )
+# def set_cookie(response, search):
+#     token_web_user_supplied = get_login_code_from_url(search)
+#     if response:
+#         if token_web_user_supplied:
+#             ctx.response.set_cookie(
+#                 "web_app_token", token_web_user_supplied, max_age=315360000
+#             )  # Set cookie to expire in 10 years
+#             return True  # Clear the data after setting the cookie
+#     return False  # No need to clear the data if response is None
 
 
 if __name__ == "__main__":
