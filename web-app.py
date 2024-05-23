@@ -192,7 +192,7 @@ app.layout = html.Div(
                                 ),
                             ],
                             navbar=True,
-                            className="ml-auto",
+                            className="ms-auto",
                         ),
                         id="navbar-collapse",
                         navbar=True,
@@ -208,98 +208,86 @@ app.layout = html.Div(
                 dbc.Row(
                     [
                         dbc.Col(
-                            [
+                            children=[
                                 html.Div(
+                                    id="login-form",
                                     children=[
                                         html.Div(
-                                            id="login-form",
+                                            id="email-form",
+                                            children=[
+                                                dbc.Form(
+                                                    [
+                                                        dbc.Input(
+                                                            id="email-input",
+                                                            placeholder="Enter your email",
+                                                            type="email",
+                                                            className="mb-2 text-center",
+                                                        ),
+                                                        dbc.Button(
+                                                            "Send Login Code",
+                                                            id="send-link-btn",
+                                                            n_clicks=0,
+                                                            color="primary",
+                                                            className="mb-2 w-100",
+                                                            style={"cursor": "pointer"},
+                                                        ),
+                                                    ],
+                                                    className="d-flex flex-column align-items-center",
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            id="code-form",
                                             children=[
                                                 html.Div(
-                                                    id="email-form",
-                                                    children=[
-                                                        dbc.Form(
-                                                            [
-                                                                dbc.Input(
-                                                                    id="email-input",
-                                                                    placeholder="Enter your email",
-                                                                    type="email",
-                                                                    className="mb-2 text-center",
-                                                                ),
-                                                                dbc.Button(
-                                                                    "Send Login Code",
-                                                                    id="send-link-btn",
-                                                                    n_clicks=0,
-                                                                    color="primary",
-                                                                    className="mb-2 w-100",
-                                                                    style={
-                                                                        "cursor": "pointer"
-                                                                    },
-                                                                ),
-                                                            ],
-                                                            className="d-flex flex-column align-items-center",
-                                                        ),
-                                                    ],
+                                                    id="email-status",
+                                                    className="text-center",
                                                 ),
-                                                html.Div(
-                                                    id="code-form",
-                                                    children=[
-                                                        html.Div(
-                                                            id="email-status",
-                                                            className="text-center",
-                                                        ),
-                                                        dbc.Form(
-                                                            [
-                                                                dbc.Input(
-                                                                    id="login-code-input",
-                                                                    placeholder="Enter login code",
-                                                                    type="text",
-                                                                    className="mb-2 text-center",
-                                                                ),
-                                                            ],
-                                                            className="d-flex flex-column align-items-center mt-3",
+                                                dbc.Form(
+                                                    [
+                                                        dbc.Input(
+                                                            id="login-code-input",
+                                                            placeholder="Enter login code",
+                                                            type="text",
+                                                            className="mb-2 text-center",
                                                         ),
                                                     ],
+                                                    className="d-flex flex-column align-items-center mt-3",
                                                 ),
                                             ],
                                         ),
                                     ],
-                                    className="toggle-element show-logged-out d-none",
-                                    id={
-                                        "type": "toggle-element",
-                                        "index": random_index(),
-                                    },
-                                ),
-                                html.Div(
-                                    children=[
-                                        dbc.Alert(
-                                            id="login-status",
-                                            color="info",
-                                            is_open=False,
-                                        ),
-                                        dbc.Button(
-                                            "Unlock Door",
-                                            id="unlock-door-btn",
-                                            color="danger",
-                                            className="my-3 w-100",
-                                            style={
-                                                "width": "90%",
-                                                "margin": "auto",
-                                                "cursor": "pointer",
-                                            },
-                                        ),
-                                        html.Div(id="unlock-status", className="mb-3"),
-                                    ],
-                                    className="toggle-element show-logged-in d-none",
-                                    id={
-                                        "type": "toggle-element",
-                                        "index": random_index(),
-                                    },
                                 ),
                             ],
                             className="d-flex flex-column align-items-center justify-content-center col-sm-10 col-lg-4 col-xl-3 mx-auto",
                         )
                     ],
-                    className="flex-grow-1",
+                    className="flex-grow-1 show-logged-out d-none",
+                    id={
+                        "type": "toggle-element",
+                        "index": random_index(),
+                    },
+                ),
+                dbc.Row(
+                    children=[
+                        dbc.Col(
+                            children=[
+                                dbc.Button(
+                                    "Unlock Door",
+                                    size="lg",
+                                    id="unlock-door-btn",
+                                    color="success",
+                                    className="h-100 w-100 mt-3 btn",
+                                ),
+                                # hidden div to store unlock status
+                                html.Div(
+                                    id="unlock-status", className="mb-3", hidden=True
+                                ),
+                            ],
+                            className="d-flex flex-column align-items-center justify-content-center mx-auto",
+                        )
+                    ],
+                    className="flex-grow-1 toggle-element show-logged-in d-none",
                     id={
                         "type": "toggle-element",
                         "index": random_index(),
@@ -381,16 +369,12 @@ app.layout = html.Div(
             fluid=True,
             className="bg-light d-flex flex-column flex-grow-1",
         ),
-        # Hidden div to store login state
-        html.Div(
-            id="login-state",
-            children="logged_out",
-            #  style={"display": "none"}
-        ),
         # Hidden input to trigger callback on page load
         dcc.Input(id="page-load-trigger", type="hidden", value="trigger"),
         # Stores
-        dcc.Store(id="dash_app_context", storage_type="local"),
+        dcc.Store(
+            id="dash_app_context", storage_type="local"
+        ),  # todo: choose better name
         dcc.Store(id="authenticated", storage_type="local"),
         dcc.Store(id="login-stage", storage_type="session", data="email-form"),
     ],
@@ -447,13 +431,13 @@ def get_login_code_from_url(search):
 # Callback to show/hide elements based on login state using pattern-matching
 @app.callback(
     Output({"type": "toggle-element", "index": ALL}, "className"),
-    [Input("login-state", "children"), Input("page-load-trigger", "value")],
+    [Input("authenticated", "data"), Input("page-load-trigger", "value")],
     [
         State({"type": "toggle-element", "index": ALL}, "id"),
         State({"type": "toggle-element", "index": ALL}, "className"),
     ],
 )
-def update_element_visibility(login_state, trigger, ids, current_classes):
+def update_element_visibility(authenticated, trigger, ids, current_classes):
     updated_classes = []
     for i, element_id in enumerate(ids):
         if (
@@ -465,14 +449,14 @@ def update_element_visibility(login_state, trigger, ids, current_classes):
 
         # update the class list based on the login state and display class
         if "show-logged-in" in current_classes[i]:
-            if login_state == "logged_in":
+            if authenticated:
                 # remove d-none from the class list
                 current_classes[i] = current_classes[i].replace("d-none", "")
             else:
                 class_to_add = "d-none"
 
         elif "show-logged-out" in current_classes[i]:
-            if login_state == "logged_out":
+            if not authenticated:
                 # remove d-none from the class list
                 current_classes[i] = current_classes[i].replace("d-none", "")
             else:
@@ -492,7 +476,6 @@ def update_element_visibility(login_state, trigger, ids, current_classes):
 
 @app.callback(
     [
-        Output("login-state", "children"),
         Output("user-display", "children"),
         Output("apartment-number", "children"),
     ],
@@ -502,12 +485,11 @@ def update_element_visibility(login_state, trigger, ids, current_classes):
 def update_login_state(is_authenticated, dash_app_context):
     if is_authenticated:
         return (
-            "logged_in",
             dash_app_context["user"]["name"],
             dash_app_context["user"]["apartment_number"],
         )
     else:
-        return "logged_out", [], ""
+        return [], ""
 
 
 @app.callback(
@@ -635,17 +617,36 @@ def handle_logout(n_clicks, search):
 
 
 @app.callback(
-    Output("unlock-status", "children"),
+    [
+        Output("unlock-status", "children", allow_duplicate=True),
+        Output("unlock-door-btn", "disabled", allow_duplicate=True),
+        Output("unlock-door-btn", "children", allow_duplicate=True),
+        Output("unlock-door-btn", "color", allow_duplicate=True),
+    ],
     [Input("unlock-door-btn", "n_clicks")],
     prevent_initial_call=True,
 )
 def handle_unlock_door(n_clicks):
-    if n_clicks > 0:
+    return "unlocking", True, "Unlocking...", "secondary"
+
+
+@app.callback(
+    [
+        Output("unlock-door-btn", "disabled", allow_duplicate=True),
+        Output("unlock-door-btn", "children", allow_duplicate=True),
+        Output("unlock-door-btn", "color", allow_duplicate=True),
+        Output("unlock-status", "children", allow_duplicate=True),
+    ],
+    [Input("unlock-status", "children")],
+    prevent_initial_call=True,
+)
+def toggle_unlock_button(unlock_status):
+    if unlock_status == "unlocking":
         try:
             unlock_door()
-            return "Door unlocked successfully."
+            return False, "Unlock Door", "success", "locked"
         except Exception as e:
-            return f"Error unlocking door: {str(e)}"
+            return False, f"Error unlocking door: {str(e)}", "danger", "error"
 
 
 @app.callback(
@@ -668,23 +669,6 @@ def toggle_navbar(n_clicks, is_open):
     if n_clicks:
         return not is_open
     return is_open
-
-
-# @app.callback(
-#     Output("dash_app_context", "clear_data"),
-#     [Input("dash_app_context", "data")],
-#     [State("url", "search")],
-#     prevent_initial_call=True,
-# )
-# def set_cookie(response, search):
-#     token_web_user_supplied = get_login_code_from_url(search)
-#     if response:
-#         if token_web_user_supplied:
-#             ctx.response.set_cookie(
-#                 "web_app_token", token_web_user_supplied, max_age=315360000
-#             )  # Set cookie to expire in 10 years
-#             return True  # Clear the data after setting the cookie
-#     return False  # No need to clear the data if response is None
 
 
 if __name__ == "__main__":
