@@ -92,10 +92,15 @@ def authenticate(login_code=None, web_app_token=None):
 
 
 def send_magic_link(email, login_code):
+    url_to_use = os.getenv(
+        "WEB_APP_URL", f"http://localhost:{os.getenv('WEB_APP_PORT', 8050)}/"
+    )
+    if not url_to_use.endswith("/"):
+        url_to_use += "/"
     ses_client = boto3.client("ses", region_name=os.getenv("AWS_REGION"))
     sender = os.getenv("AWS_SES_SENDER_EMAIL")
     subject = "Your Login Code"
-    body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='http://localhost:8050?login_code={login_code}'>Log In</a></p></center></body></html>"""
+    body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='{url_to_use}?login_code={login_code}'>Log In</a></p></center></body></html>"""
     try:
         response = ses_client.send_email(
             Destination={"ToAddresses": [email]},
