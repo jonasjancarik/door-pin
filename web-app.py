@@ -95,7 +95,7 @@ def send_magic_link(email, login_code):
     ses_client = boto3.client("ses", region_name=os.getenv("AWS_REGION"))
     sender = os.getenv("AWS_SES_SENDER_EMAIL")
     subject = "Your Login Code"
-    body_html = f"""<html><body><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='http://localhost:8050?login_code={login_code}'>Log In</a></p></body></html>"""
+    body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='http://localhost:8050?login_code={login_code}'>Log In</a></p></center></body></html>"""
     try:
         response = ses_client.send_email(
             Destination={"ToAddresses": [email]},
@@ -211,6 +211,7 @@ app.layout = html.Div(
                             children=[
                                 html.Div(
                                     id="login-form",
+                                    className="w-100",
                                     children=[
                                         html.Div(
                                             id="email-form",
@@ -259,7 +260,7 @@ app.layout = html.Div(
                                     ],
                                 ),
                             ],
-                            className="d-flex flex-column align-items-center justify-content-center col-sm-10 col-lg-4 col-xl-3 mx-auto",
+                            className="d-flex flex-column align-items-center justify-content-center col-sm-10 col-lg-4 col-xl-4 mx-auto",
                         )
                     ],
                     className="flex-grow-1 show-logged-out d-none",
@@ -557,11 +558,11 @@ def handle_login(search, n_clicks, login_code_input, dash_app_context):
 @app.callback(
     Output("pin-status", "children"),
     [Input("submit-pin-btn", "n_clicks")],
-    [State("pin-input", "value"), State("url", "search")],
+    [State("pin-input", "value"), State("dash_app_context", "data")],
 )
-def submit_pin_data(n_clicks, pin, search):
+def submit_pin_data(n_clicks, pin, dash_app_context):
     if n_clicks > 0:
-        if user := authenticate(search):
+        if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
             apartment_number = user["apartment_number"]
             creator_email = user["email"]
             label = (
@@ -627,7 +628,7 @@ def handle_logout(n_clicks, search):
     prevent_initial_call=True,
 )
 def handle_unlock_door(n_clicks):
-    return "unlocking", True, "Unlocking...", "secondary"
+    return "unlocking", True, "Unlocked...", "secondary"
 
 
 @app.callback(
@@ -636,15 +637,30 @@ def handle_unlock_door(n_clicks):
         Output("unlock-door-btn", "children", allow_duplicate=True),
         Output("unlock-door-btn", "color", allow_duplicate=True),
         Output("unlock-status", "children", allow_duplicate=True),
+        Output("authenticated", "data", allow_duplicate=True),
     ],
     [Input("unlock-status", "children")],
+    State("dash_app_context", "data"),
     prevent_initial_call=True,
 )
-def toggle_unlock_button(unlock_status):
+def toggle_unlock_button(unlock_status, dash_app_context):
     if unlock_status == "unlocking":
         try:
-            unlock_door()
-            return False, "Unlock Door", "success", "locked"
+            if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
+                # log the unlock event
+                print(f"Unlocking door for {user['email']}...")
+                unlock_door()
+                time.sleep(5)
+                return False, "Unlock Door", "success", "locked", True
+            else:
+                return (
+                    True,
+                    "Log in again to unlock door.",
+                    "danger",
+                    "error: session expired",
+                    False,
+                )
+
         except Exception as e:
             return False, f"Error unlocking door: {str(e)}", "danger", "error"
 
