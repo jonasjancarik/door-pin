@@ -29,6 +29,8 @@ app = Dash(
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
 
+app.title = os.getenv("WEB_APP_TITLE", "House Access Control System")
+
 
 def random_index():
     return random.randint(0, 999999)
