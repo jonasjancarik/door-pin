@@ -688,4 +688,4 @@ def toggle_navbar(n_clicks, is_open):
 
 
 if __name__ == "__main__":
-    app.run_server(debug=True)
+    app.run_server(debug=True, port=os.getenv("WEB_APP_PORT", 8050))
