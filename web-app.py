@@ -13,6 +13,7 @@ from device import add_device
 from utils import unlock_door, hash_secret, load_data, save_data
 from urllib.parse import parse_qs
 import random
+from dash_svg import Svg, Circle
 
 
 # Load environment variables
@@ -235,7 +236,8 @@ app.layout = html.Div(
                                                             "Send Login Code",
                                                             id="send-link-btn",
                                                             n_clicks=0,
-                                                            color="primary",
+                                                            color="secondary",
+                                                            outline=True,
                                                             className="mb-2 w-100",
                                                             style={"cursor": "pointer"},
                                                         ),
@@ -277,29 +279,42 @@ app.layout = html.Div(
                     },
                 ),
                 dbc.Row(
-                    children=[
-                        dbc.Col(
+                    dbc.Col(
+                        html.Div(
                             children=[
-                                dbc.Button(
+                                html.Button(
                                     "Unlock Door",
-                                    size="lg",
                                     id="unlock-door-btn",
-                                    color="success",
-                                    className="h-100 w-100 mt-3 btn",
+                                    className="button-round",
                                 ),
-                                # hidden div to store unlock status
-                                html.Div(
-                                    id="unlock-status", className="mb-3", hidden=True
+                                Svg(
+                                    Circle(
+                                        cx="60",
+                                        cy="60",
+                                        r="55",
+                                        fill="none",
+                                        stroke="#343434",
+                                        strokeWidth="4",
+                                        strokeDasharray="345.575",
+                                        strokeDashoffset="0",
+                                        id="countdown-circle",
+                                    ),
+                                    viewBox="0 0 120 120",
+                                    className="svg-circle",
+                                    id="svg-circle",
                                 ),
+                                html.Div(id="unlock-status", hidden=True),
                             ],
-                            className="d-flex flex-column align-items-center justify-content-center mx-auto",
-                        )
-                    ],
-                    className="flex-grow-1 toggle-element show-logged-in d-none",
-                    id={
-                        "type": "toggle-element",
-                        "index": random_index(),
-                    },
+                            id="unlock-button-container",
+                            style={
+                                "position": "relative",
+                                "display": "inline-block",
+                            },
+                        ),
+                        className="d-flex flex-column align-items-center justify-content-center",
+                    ),
+                    id={"type": "toggle-element", "index": random_index()},
+                    className="toggle-element show-logged-in d-none flex-grow-1",
                 ),
                 html.Div(
                     dbc.Modal(
@@ -375,7 +390,8 @@ app.layout = html.Div(
                 ),
             ],
             fluid=True,
-            className="bg-light d-flex flex-column flex-grow-1",
+            id="content-wrapper",
+            className="d-flex flex-column flex-grow-1",
         ),
         # Hidden input to trigger callback on page load
         dcc.Input(id="page-load-trigger", type="hidden", value="trigger"),
@@ -629,22 +645,31 @@ def handle_logout(n_clicks, search):
         Output("unlock-status", "children", allow_duplicate=True),
         Output("unlock-door-btn", "disabled", allow_duplicate=True),
         Output("unlock-door-btn", "children", allow_duplicate=True),
-        Output("unlock-door-btn", "color", allow_duplicate=True),
+        Output("countdown-circle", "style", allow_duplicate=True),
     ],
     [Input("unlock-door-btn", "n_clicks")],
     prevent_initial_call=True,
 )
 def handle_unlock_door(n_clicks):
-    return "unlocking", True, "Unlocked...", "secondary"
+    print("handle_unlock_door")
+    return (
+        "unlocking",
+        True,
+        "Unlocked...",
+        {
+            "transition": "stroke-dashoffset 7s linear",
+            "strokeDashoffset": "345.575",  # This makes the stroke disappear
+        },
+    )
 
 
 @app.callback(
     [
-        Output("unlock-door-btn", "disabled", allow_duplicate=True),
-        Output("unlock-door-btn", "children", allow_duplicate=True),
-        Output("unlock-door-btn", "color", allow_duplicate=True),
-        Output("unlock-status", "children", allow_duplicate=True),
+        Output("unlock-door-btn", "disabled"),
+        Output("unlock-door-btn", "children"),
+        Output("unlock-status", "children"),
         Output("authenticated", "data", allow_duplicate=True),
+        Output("countdown-circle", "style", allow_duplicate=True),
     ],
     [Input("unlock-status", "children")],
     State("dash_app_context", "data"),
@@ -652,24 +677,31 @@ def handle_unlock_door(n_clicks):
 )
 def toggle_unlock_button(unlock_status, dash_app_context):
     if unlock_status == "unlocking":
-        try:
-            if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
-                # log the unlock event
-                print(f"Unlocking door for {user['email']}...")
-                unlock_door()
-                time.sleep(5)
-                return False, "Unlock Door", "success", "locked", True
-            else:
-                return (
-                    True,
-                    "Log in again to unlock door.",
-                    "danger",
-                    "error: session expired",
-                    False,
-                )
-
-        except Exception as e:
-            return False, f"Error unlocking door: {str(e)}", "danger", "error"
+        if authenticate(web_app_token=dash_app_context["web_app_token"]):
+            unlock_door()
+            time.sleep(7)  # The lock stays open for 7 seconds
+            # Animation for the SVG circle
+            return (
+                False,  # Button disabled
+                "Unlock Door",  # Button text
+                "Door unlocked",  # Status message
+                True,  # Authentication status
+                {
+                    "transition": "stroke-dashoffset 0.5s linear",
+                    "strokeDashoffset": "0",  # This resets the stroke quickly
+                },
+            )
+        else:
+            return (
+                True,  # Keep button disabled
+                "Log in again to unlock door.",  # Change button text to indicate re-login
+                "Session expired, please log in again.",  # Error message
+                False,  # Authentication status
+                {
+                    "transition": "stroke-dashoffset 0.5s linear",
+                    "strokeDashoffset": "0",  # This resets the stroke quickly
+                },
+            )
 
 
 @app.callback(
