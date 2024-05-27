@@ -291,11 +291,11 @@ app.layout = html.Div(
                                     Circle(
                                         cx="60",
                                         cy="60",
-                                        r="55",
+                                        r="58",  # perfectly inset from the edge of the round button
                                         fill="none",
                                         stroke="#343434",
                                         strokeWidth="4",
-                                        strokeDasharray="345.575",
+                                        strokeDasharray="364.424",  # 2 * pi * r
                                         strokeDashoffset="0",
                                         id="countdown-circle",
                                     ),
