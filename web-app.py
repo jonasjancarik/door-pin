@@ -658,7 +658,7 @@ def handle_unlock_door(n_clicks):
         "Unlocked...",
         {
             "transition": "stroke-dashoffset 7s linear",
-            "strokeDashoffset": "345.575",  # This makes the stroke disappear
+            "strokeDashoffset": "364.424",  # This makes the stroke disappear
         },
     )
 
