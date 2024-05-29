@@ -5,13 +5,6 @@ import utils
 
 PIN_LENGTH = 6  # Total length including user ID
 
-# Load hashed PINs from a json file
-try:
-    with open("pins.json", "r") as file:
-        users = json.load(file)
-except FileNotFoundError:
-    sys.exit('No "pins.json" file found. No PINs loaded.')
-
 
 def open_door():
     """Activate the relay to open the door."""
@@ -67,22 +60,32 @@ def main():
 
                                 if len(input_pin) == PIN_LENGTH:
                                     user_id, pin = input_pin[:2], input_pin[2:]
-                                    user = users.get(user_id)
-                                    if user:
-                                        user_pin_hashes = [
-                                            x["hashed_pin"] for x in user
-                                        ]
+
+                                    pins_hashed = set()
+
+                                    data = utils.load_data()
+                                    for apartment_number in data["apartments"]:
                                         if (
-                                            utils.hash_secret(salt=user_id, payload=pin)
-                                            in user_pin_hashes
+                                            "pins"
+                                            in data["apartments"][apartment_number]
                                         ):
-                                            open_door()
-                                            input_pin = ""
-                                            print(
-                                                "Enter User ID and PIN: ",
-                                                end="",
-                                                flush=True,
-                                            )
+                                            for pin in data["apartments"][
+                                                apartment_number
+                                            ]["pins"]:
+                                                pins_hashed.add(pin["hashed_pin"])
+
+                                    if (
+                                        utils.hash_secret(salt=user_id, payload=pin)
+                                        in pins_hashed
+                                    ):
+                                        open_door()
+                                        input_pin = ""
+                                        print(
+                                            "Enter User ID and PIN: ",
+                                            end="",
+                                            flush=True,
+                                        )
+
                             else:
                                 print(
                                     "\nA non-digit key was pressed. Please only enter digits."
