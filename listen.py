@@ -35,7 +35,6 @@ def main():
         print(f"Using keyboard: {keyboard.name} at {keyboard.path}")
 
     input_pin = ""
-    rfid_input = ""
 
     print("Enter User ID and PIN or scan RFID: ", end="", flush=True)
     while True:
@@ -53,9 +52,9 @@ def main():
                             key = key_code.split("_")[1].replace("KP", "")
                             if key.isdigit():
                                 input_pin += key
-                                input_pin = input_pin[-PIN_LENGTH:]
+                                input_pin = input_pin[-max(PIN_LENGTH, RFID_LENGTH) :]
                                 print(
-                                    f"\rEnter User ID and PIN: {input_pin}",
+                                    f"\rEnter User ID and PIN or scan RFID: {input_pin}",
                                     end="",
                                     flush=True,
                                 )
@@ -71,10 +70,10 @@ def main():
                                             "pins"
                                             in data["apartments"][apartment_number]
                                         ):
-                                            for pin in data["apartments"][
+                                            for pin_entry in data["apartments"][
                                                 apartment_number
                                             ]["pins"]:
-                                                pins_hashed.add(pin["hashed_pin"])
+                                                pins_hashed.add(pin_entry["hashed_pin"])
 
                                     if (
                                         utils.hash_secret(salt=user_id, payload=pin)
@@ -83,12 +82,12 @@ def main():
                                         open_door()
                                         input_pin = ""
                                         print(
-                                            "Enter User ID and PIN: ",
+                                            "Enter User ID and PIN or scan RFID: ",
                                             end="",
                                             flush=True,
                                         )
                                 elif len(input_pin) == RFID_LENGTH:
-                                    input_pin
+                                    rfid_input = input_pin
 
                                     rfids_hashed = set()
 
@@ -104,13 +103,13 @@ def main():
                                                 rfids_hashed.add(rfid["hashed_rfid"])
 
                                     if (
-                                        utils.hash_secret(payload=input_pin)
+                                        utils.hash_secret(payload=rfid_input)
                                         in rfids_hashed
                                     ):
                                         open_door()
                                         input_pin = ""
                                         print(
-                                            "Enter User ID and PIN: ",
+                                            "Enter User ID and PIN or scan RFID: ",
                                             end="",
                                             flush=True,
                                         )
@@ -118,7 +117,7 @@ def main():
                                         print("\nRFID not found. Please try again.")
                                         input_pin = ""
                                         print(
-                                            "Enter User ID and PIN: ",
+                                            "Enter User ID and PIN or scan RFID: ",
                                             end="",
                                             flush=True,
                                         )
@@ -127,7 +126,11 @@ def main():
                                     "\nA non-digit key was pressed. Please only enter digits."
                                 )
                                 input_pin = ""
-                                print("Enter User ID and PIN: ", end="", flush=True)
+                                print(
+                                    "Enter User ID and PIN or scan RFID: ",
+                                    end="",
+                                    flush=True,
+                                )
 
 
 if __name__ == "__main__":
