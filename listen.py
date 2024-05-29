@@ -1,6 +1,4 @@
 from evdev import InputDevice, categorize, ecodes, list_devices
-import json
-import sys
 import utils
 
 PIN_LENGTH = 6  # Total length including user ID
