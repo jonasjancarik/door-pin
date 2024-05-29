@@ -4,11 +4,12 @@ import sys
 import utils
 
 PIN_LENGTH = 6  # Total length including user ID
+RFID_LENGTH = 10  # Adjust this as per your RFID reader's UUID length
 
 
 def open_door():
     """Activate the relay to open the door."""
-    print("\nPIN correct! Activating relay.")
+    print("\nPIN or RFID correct! Activating relay.")
     utils.unlock_door()
     print("Relay deactivated.")
 
@@ -34,8 +35,9 @@ def main():
         print(f"Using keyboard: {keyboard.name} at {keyboard.path}")
 
     input_pin = ""
+    rfid_input = ""
 
-    print("Enter User ID and PIN: ", end="", flush=True)
+    print("Enter User ID and PIN or scan RFID: ", end="", flush=True)
     while True:
         for keyboard in keyboards:
             for event in keyboard.read_loop():
@@ -85,7 +87,41 @@ def main():
                                             end="",
                                             flush=True,
                                         )
+                                elif len(input_pin) == RFID_LENGTH:
+                                    input_pin
 
+                                    rfids_hashed = set()
+
+                                    data = utils.load_data()
+                                    for apartment_number in data["apartments"]:
+                                        if (
+                                            "rfids"
+                                            in data["apartments"][apartment_number]
+                                        ):
+                                            for rfid in data["apartments"][
+                                                apartment_number
+                                            ]["rfids"]:
+                                                rfids_hashed.add(rfid["hashed_rfid"])
+
+                                    if (
+                                        utils.hash_secret(payload=input_pin)
+                                        in rfids_hashed
+                                    ):
+                                        open_door()
+                                        input_pin = ""
+                                        print(
+                                            "Enter User ID and PIN: ",
+                                            end="",
+                                            flush=True,
+                                        )
+                                    else:
+                                        print("\nRFID not found. Please try again.")
+                                        input_pin = ""
+                                        print(
+                                            "Enter User ID and PIN: ",
+                                            end="",
+                                            flush=True,
+                                        )
                             else:
                                 print(
                                     "\nA non-digit key was pressed. Please only enter digits."
