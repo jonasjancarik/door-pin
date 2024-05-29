@@ -34,32 +34,38 @@ def create_pin(apartment_number, pin, creator_email, label):
     print(f"New PIN for apartment number {apartment_number} stored.")
 
 
-def delete_pin(pins):
+def delete_pin(apartment_number, hashed_pin):
     """Delete an existing PIN entry."""
-    apartment_number = input("Enter apartment number to delete PIN from (two digits): ")
-    if apartment_number in pins:
-        print("Select a PIN to delete:")
-        for index, pin in enumerate(pins[apartment_number]):
-            print(f"{index + 1}. Created by {pin['creator']} on {pin['created_at']}")
-        choice = int(input("Enter the number of the PIN to delete: ")) - 1
-        if 0 <= choice < len(pins[apartment_number]):
-            del pins[apartment_number][choice]
-            print("PIN deleted.")
-            if not pins[apartment_number]:  # Remove the entry if no pins left
-                del pins[apartment_number]
-        else:
-            print("Invalid PIN selection.")
-    else:
+    data = load_data()
+
+    if apartment_number not in data["apartments"]:
         print("Apartment number not found.")
+        return False
+    if "pins" not in data["apartments"][apartment_number]:
+        print("No PINs stored for this apartment.")
+        return False
+    new_pins = [
+        pin
+        for pin in data["apartments"][apartment_number]["pins"]
+        if pin["hashed_pin"] != hashed_pin
+    ]
+    data["apartments"][apartment_number]["pins"] = new_pins
+    save_data(data)
+    print("PIN not found.")
+    return False
 
 
-def list_pins(pins):
+def list_pins():
     """List all PINs."""
-    for apartment_number, entries in pins.items():
+    data = load_data()
+    for apartment_number, apartment in data["apartments"].items():
         print(f"Apartment Number: {apartment_number}")
-        for pin in entries:
+        if "pins" not in apartment or not apartment["pins"]:
+            print("  No PINs stored for this apartment.")
+            continue
+        for pin in apartment.get("pins", []):
             print(
-                f"    Hashed PIN: {pin['hashed_pin']}, Creator: {pin['creator']}, Created At: {pin['created_at']}"
+                f"  Hashed PIN: {pin['hashed_pin']}, Creator: {pin['creator_email']}, Label: {pin['label']}, Created At: {pin['created_at']}"
             )
 
 
@@ -69,18 +75,34 @@ def main():
         print("\n1. Create PIN\n2. Delete PIN\n3. List PINs\n4. Exit")
         choice = input("Enter your choice: ")
         if choice == "1":
-            create_pin(data)
+            apartment_number = input("Enter apartment number (two digits): ")
+            pin = input("Enter PIN: ")
+            creator_email = input("Enter your email address: ")
+            label = input("Enter a label for this PIN: ")
+            create_pin(apartment_number, pin, creator_email, label)
         elif choice == "2":
-            delete_pin(data)
+            apartment_number = input("Enter apartment number (two digits): ")
+            pins = data["apartments"][apartment_number].get("pins", [])
+            if not pins:
+                print("No PINs stored for this apartment.")
+                continue
+            print("Select a PIN to delete:")
+            for index, pin in enumerate(pins):
+                print(
+                    f"{index + 1}. Created by {pin['creator_email']} on {pin['created_at']}"
+                )
+            choice = int(input("Enter the number of the PIN to delete: ")) - 1
+            if 0 <= choice < len(pins):
+                if delete_pin(apartment_number, pins[choice]["hashed_pin"]):
+                    print("PIN deleted.")
         elif choice == "3":
-            list_pins(data)
+            print("\n")
+            list_pins()
         elif choice == "4":
-            save_data(data)
             print("Exiting...")
             break
         else:
             print("Invalid choice, please try again.")
-        save_data(data)  # Save after every operation
 
 
 if __name__ == "__main__":
