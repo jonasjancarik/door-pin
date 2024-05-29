@@ -3,21 +3,8 @@ import json
 import datetime
 
 
-def load_data():
-    try:
-        with open("data.json", "r") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {"apartments": {}}
-
-
-def save_data(data):
-    with open("data.json", "w") as file:
-        json.dump(data, file, indent=4)
-
-
 def create_pin(apartment_number, pin, creator_email, label):
-    data = load_data()
+    data = utils.load_data()
     hashed_pin = utils.hash_secret(salt=apartment_number, payload=pin)
     entry = {
         "label": label,
@@ -30,13 +17,13 @@ def create_pin(apartment_number, pin, creator_email, label):
     )
     data["apartments"][apartment_number].setdefault("pins", [])
     data["apartments"][apartment_number]["pins"].append(entry)
-    save_data(data)
+    utils.save_data(data)
     print(f"New PIN for apartment number {apartment_number} stored.")
 
 
 def delete_pin(apartment_number, hashed_pin):
     """Delete an existing PIN entry."""
-    data = load_data()
+    data = utils.load_data()
 
     if apartment_number not in data["apartments"]:
         print("Apartment number not found.")
@@ -50,14 +37,14 @@ def delete_pin(apartment_number, hashed_pin):
         if pin["hashed_pin"] != hashed_pin
     ]
     data["apartments"][apartment_number]["pins"] = new_pins
-    save_data(data)
+    utils.save_data(data)
     print("PIN not found.")
     return False
 
 
 def list_pins():
     """List all PINs."""
-    data = load_data()
+    data = utils.load_data()
     for apartment_number, apartment in data["apartments"].items():
         print(f"Apartment Number: {apartment_number}")
         if "pins" not in apartment or not apartment["pins"]:
@@ -70,7 +57,7 @@ def list_pins():
 
 
 def main():
-    data = load_data()
+    data = utils.load_data()
     while True:
         print("\n1. Create PIN\n2. Delete PIN\n3. List PINs\n4. Exit")
         choice = input("Enter your choice: ")
