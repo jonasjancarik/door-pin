@@ -353,10 +353,16 @@ app.layout = html.Div(
                                             ),
                                             dbc.Input(
                                                 id="pin-input",
-                                                placeholder="Enter PIN",
+                                                placeholder="Enter rest of PIN",
                                                 type="password",
                                             ),
                                         ],
+                                        className="mb-2",
+                                    ),
+                                    dbc.Input(
+                                        id="label-input",
+                                        placeholder="Enter PIN label",
+                                        type="text",
                                         className="mb-2",
                                     ),
                                     dbc.Button(
@@ -581,19 +587,25 @@ def handle_login(search, n_clicks, login_code_input, dash_app_context):
 @app.callback(
     Output("pin-status", "children"),
     [Input("submit-pin-btn", "n_clicks")],
-    [State("pin-input", "value"), State("dash_app_context", "data")],
+    [
+        State("pin-input", "value"),
+        State("label-input", "value"),
+        State("dash_app_context", "data"),
+    ],
 )
-def submit_pin_data(n_clicks, pin, dash_app_context):
+def submit_pin_data(n_clicks, pin, label, dash_app_context):
     if n_clicks > 0:
-        if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
-            apartment_number = user["apartment_number"]
-            creator_email = user["email"]
-            label = (
-                f"PIN {len(load_data()['apartments'][apartment_number]['pins']) + 1}"
-            )
-            create_pin(apartment_number, pin, creator_email, label)
-            return "PIN successfully registered."
-        return "Session has expired. Please log in again."
+        if pin and len(pin) == 4 and pin.isdigit():
+            if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
+                apartment_number = user["apartment_number"]
+                creator_email = user["email"]
+                if not label:
+                    label = time.strftime("%Y-%m-%d %H:%M:%S")
+                create_pin(apartment_number, pin, creator_email, label)
+                return "PIN successfully registered."
+            return "Session has expired. Please log in again."
+        else:
+            return "Invalid PIN. Please enter a 4-digit number. The PIN must be six digits long in total, including the apartment number."
 
 
 @app.callback(
@@ -602,14 +614,16 @@ def submit_pin_data(n_clicks, pin, dash_app_context):
     [
         State("mac-input", "value"),
         State("label-input", "value"),
-        State("url", "search"),
+        State("dash_app_context", "data"),
     ],
 )
-def submit_device_data(n_clicks, mac, label, search):
+def submit_device_data(n_clicks, mac, label, dash_app_context):
     if n_clicks > 0:
-        if user := authenticate(search):
+        if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
             apartment_number = user["apartment_number"]
             creator_email = user["email"]
+            if not label:
+                label = time.strftime("%Y-%m-%d %H:%M:%S")
             add_device(apartment_number, label, creator_email, mac)
             return "Device successfully registered."
         return "Session has expired. Please log in again."
