@@ -345,18 +345,10 @@ app.layout = html.Div(
                                     ),
                                     html.Div(id="device-status"),
                                     html.H4("PIN Registration", className="mb-3"),
-                                    dbc.InputGroup(
-                                        [
-                                            dbc.InputGroupText(
-                                                id="apartment-number",
-                                                className="fw-bold",
-                                            ),
-                                            dbc.Input(
-                                                id="pin-input",
-                                                placeholder="Enter rest of PIN",
-                                                type="password",
-                                            ),
-                                        ],
+                                    dbc.Input(
+                                        id="pin-input",
+                                        placeholder="Enter 4-digit PIN",
+                                        type="password",
                                         className="mb-2",
                                     ),
                                     dbc.Input(
@@ -505,21 +497,15 @@ def update_element_visibility(authenticated, trigger, ids, current_classes):
 
 
 @app.callback(
-    [
-        Output("user-display", "children"),
-        Output("apartment-number", "children"),
-    ],
+    Output("user-display", "children"),
     Input("authenticated", "data"),
     State("dash_app_context", "data"),
 )
 def update_login_state(is_authenticated, dash_app_context):
     if is_authenticated:
-        return (
-            dash_app_context["user"]["name"],
-            dash_app_context["user"]["apartment_number"],
-        )
+        return dash_app_context["user"]["name"]
     else:
-        return [], ""
+        return ""
 
 
 @app.callback(
@@ -605,7 +591,15 @@ def submit_pin_data(n_clicks, pin, label, dash_app_context):
                 return "PIN successfully registered."
             return "Session has expired. Please log in again."
         else:
-            return "Invalid PIN. Please enter a 4-digit number. The PIN must be six digits long in total, including the apartment number."
+            if not pin:
+                return "Please enter a 4-digit PIN."
+            if not pin.isdigit():
+                return "PIN must be a 4-digit number."
+            if len(pin) != 4:
+                if len(pin) < 4:
+                    return "PIN is too short. Please enter a 4-digit number."
+                if len(pin) > 4:
+                    return "PIN is too long. Please enter a 4-digit number."
 
 
 @app.callback(

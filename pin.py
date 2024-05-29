@@ -1,14 +1,15 @@
 import utils
-import json
 import datetime
 
 
 def create_pin(apartment_number, pin, creator_email, label):
     data = utils.load_data()
-    hashed_pin = utils.hash_secret(salt=apartment_number, payload=pin)
+    salt = utils.generate_salt()
+    hashed_pin = utils.hash_secret(salt=salt, payload=pin)
     entry = {
         "label": label,
         "hashed_pin": hashed_pin,
+        "salt": salt,
         "creator_email": creator_email,
         "created_at": datetime.datetime.now().isoformat(),
     }

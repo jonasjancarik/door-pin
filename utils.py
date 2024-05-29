@@ -61,6 +61,10 @@ def hash_secret(payload=None, salt=None):
     return hashlib.sha256(string_to_hash.encode("utf-8")).hexdigest()
 
 
+def generate_salt():
+    return os.urandom(16).hex()
+
+
 class BluetoothctlError(Exception):
     """This exception is raised when bluetoothctl fails to start or execute a command."""
 

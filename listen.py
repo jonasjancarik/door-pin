@@ -1,7 +1,7 @@
 from evdev import InputDevice, categorize, ecodes, list_devices
 import utils
 
-PIN_LENGTH = 6  # Total length including user ID
+PIN_LENGTH = 4  # Changing this would require changing web-app.py too
 RFID_LENGTH = 10  # Adjust this as per your RFID reader's UUID length
 
 
@@ -58,14 +58,10 @@ def main():
 
                                 # Check if PIN is valid
                                 if len(input_pin) >= PIN_LENGTH:
-                                    user_id, pin = (
-                                        input_pin[-PIN_LENGTH:][:2],
-                                        input_pin[-(PIN_LENGTH - 2) :],
-                                    )
-
-                                    pins_hashed = set()
+                                    pin = input_pin[-PIN_LENGTH:]
 
                                     data = utils.load_data()
+
                                     for apartment_number in data["apartments"]:
                                         if (
                                             "pins"
@@ -74,25 +70,24 @@ def main():
                                             for pin_entry in data["apartments"][
                                                 apartment_number
                                             ]["pins"]:
-                                                pins_hashed.add(pin_entry["hashed_pin"])
-
-                                    if (
-                                        utils.hash_secret(salt=user_id, payload=pin)
-                                        in pins_hashed
-                                    ):
-                                        open_door()
-                                        input_pin = ""
-                                        print(
-                                            "Enter User ID and PIN or scan RFID: ",
-                                            end="",
-                                            flush=True,
-                                        )
+                                                salt = pin_entry["salt"]
+                                                if (
+                                                    utils.hash_secret(
+                                                        salt=salt, payload=pin
+                                                    )
+                                                    == pin_entry["hashed_pin"]
+                                                ):
+                                                    open_door()
+                                                    input_pin = ""
+                                                    print(
+                                                        "Enter User ID and PIN or scan RFID: ",
+                                                        end="",
+                                                        flush=True,
+                                                    )
 
                                 # Check if RFID is valid
                                 if len(input_pin) >= RFID_LENGTH:
                                     rfid_input = input_pin[-RFID_LENGTH:]
-
-                                    rfids_hashed = set()
 
                                     data = utils.load_data()
                                     for apartment_number in data["apartments"]:
@@ -103,26 +98,20 @@ def main():
                                             for rfid in data["apartments"][
                                                 apartment_number
                                             ]["rfids"]:
-                                                rfids_hashed.add(rfid["hashed_rfid"])
-
-                                    if (
-                                        utils.hash_secret(payload=rfid_input)
-                                        in rfids_hashed
-                                    ):
-                                        open_door()
-                                        input_pin = ""
-                                        print(
-                                            "Enter User ID and PIN or scan RFID: ",
-                                            end="",
-                                            flush=True,
-                                        )
-                                    else:
-                                        print("\nRFID not found. Please try again.")
-                                        print(
-                                            "Enter User ID and PIN or scan RFID: ",
-                                            end="",
-                                            flush=True,
-                                        )
+                                                if (
+                                                    utils.hash_secret(
+                                                        salt=rfid["salt"],
+                                                        payload=rfid_input,
+                                                    )
+                                                    == rfid["hashed_rfid"]
+                                                ):
+                                                    open_door()
+                                                    input_pin = ""
+                                                    print(
+                                                        "Enter User ID and PIN or scan RFID: ",
+                                                        end="",
+                                                        flush=True,
+                                                    )
                             else:
                                 print("\nA non-digit key was pressed. Input reset.")
                                 input_pin = ""
