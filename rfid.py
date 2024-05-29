@@ -3,8 +3,10 @@ import datetime
 
 try:
     from evdev import InputDevice, categorize, ecodes, list_devices
+
+    evdev_imported = True
 except ImportError:
-    evdev = None
+    evdev_imported = False
 
 RFID_LENGTH = 10  # Adjust this as per your RFID reader's UUID length
 
@@ -79,7 +81,7 @@ def read_rfid_from_keyboards():
 
 
 def add_rfid(apartment_number, creator_email, label):
-    if evdev:
+    if evdev_imported:
         print(
             "Would you like to enter RFID manually or scan using a connected reader? (m/s): ",
             end="",
