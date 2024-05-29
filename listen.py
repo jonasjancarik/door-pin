@@ -50,15 +50,18 @@ def main():
                             key = key_code.split("_")[1].replace("KP", "")
                             if key.isdigit():
                                 input_pin += key
-                                input_pin = input_pin[-max(PIN_LENGTH, RFID_LENGTH) :]
                                 print(
                                     f"\rEnter User ID and PIN or scan RFID: {input_pin}",
                                     end="",
                                     flush=True,
                                 )
 
-                                if len(input_pin) == PIN_LENGTH:
-                                    user_id, pin = input_pin[:2], input_pin[2:]
+                                # Check if PIN is valid
+                                if len(input_pin) >= PIN_LENGTH:
+                                    user_id, pin = (
+                                        input_pin[-PIN_LENGTH:][:2],
+                                        input_pin[-(PIN_LENGTH - 2) :],
+                                    )
 
                                     pins_hashed = set()
 
@@ -84,8 +87,10 @@ def main():
                                             end="",
                                             flush=True,
                                         )
-                                elif len(input_pin) == RFID_LENGTH:
-                                    rfid_input = input_pin
+
+                                # Check if RFID is valid
+                                if len(input_pin) >= RFID_LENGTH:
+                                    rfid_input = input_pin[-RFID_LENGTH:]
 
                                     rfids_hashed = set()
 
@@ -113,16 +118,13 @@ def main():
                                         )
                                     else:
                                         print("\nRFID not found. Please try again.")
-                                        input_pin = ""
                                         print(
                                             "Enter User ID and PIN or scan RFID: ",
                                             end="",
                                             flush=True,
                                         )
                             else:
-                                print(
-                                    "\nA non-digit key was pressed. Please only enter digits."
-                                )
+                                print("\nA non-digit key was pressed. Input reset.")
                                 input_pin = ""
                                 print(
                                     "Enter User ID and PIN or scan RFID: ",
