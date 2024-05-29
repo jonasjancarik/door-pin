@@ -10,11 +10,13 @@ RFID_LENGTH = 10  # Adjust this as per your RFID reader's UUID length
 
 
 def save_rfid(apartment_number, rfid, creator_email, label):
-    data = utils.utils.load_data()
-    hashed_rfid = utils.hash_secret(salt=apartment_number, payload=rfid)
+    data = utils.load_data()
+    salt = utils.generate_salt()
+    hashed_rfid = utils.hash_secret(salt=salt, payload=rfid)
     entry = {
         "label": label,
         "hashed_rfid": hashed_rfid,
+        "salt": salt,
         "creator_email": creator_email,
         "created_at": datetime.datetime.now().isoformat(),
     }
