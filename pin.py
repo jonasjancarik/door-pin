@@ -25,8 +25,10 @@ def create_pin(apartment_number, pin, creator_email, label):
         "creator_email": creator_email,
         "created_at": datetime.datetime.now().isoformat(),
     }
-    if apartment_number not in data["apartments"]:
-        data["apartments"][apartment_number] = {"users": [], "pins": [], "devices": []}
+    data["apartments"].setdefault(
+        apartment_number, {"users": [], "pins": [], "devices": []}
+    )
+    data["apartments"][apartment_number].setdefault("pins", [])
     data["apartments"][apartment_number]["pins"].append(entry)
     save_data(data)
     print(f"New PIN for apartment number {apartment_number} stored.")
