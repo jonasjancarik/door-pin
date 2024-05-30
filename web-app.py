@@ -321,7 +321,36 @@ app.layout = html.Div(
                             dbc.ModalHeader("Settings"),
                             dbc.ModalBody(
                                 [
-                                    html.H4("PIN Registration", className="mb-3"),
+                                    # User adding
+                                    html.H4("User Registration", className="mb-3"),
+                                    dbc.Input(
+                                        id="user-email-input",
+                                        placeholder="Enter user email",
+                                        type="email",
+                                        className="mb-2",
+                                    ),
+                                    dbc.Input(
+                                        id="user-name-input",
+                                        placeholder="Enter user name",
+                                        type="text",
+                                        className="mb-2",
+                                    ),
+                                    # checkbox whether the user is a guest -explain that guests cannot add other users but can set PINs
+                                    dbc.Checkbox(
+                                        id="user-guest-checkbox",
+                                        className="mb-2",
+                                        label="Guest (won't be able to add other users)",
+                                    ),
+                                    dbc.Button(
+                                        "Add User",
+                                        id="submit-user-btn",
+                                        n_clicks=0,
+                                        color="primary",
+                                        className="w-100",
+                                        style={"cursor": "pointer"},
+                                    ),
+                                    html.Div(id="user-status"),
+                                    html.H4("PIN Registration", className="mb-3 mt-2"),
                                     dbc.Input(
                                         id="pin-input",
                                         placeholder="Enter 4-digit PIN",
@@ -592,6 +621,42 @@ def submit_pin_data(n_clicks, pin, label, dash_app_context):
                     return "PIN is too short. Please enter a 4-digit number."
                 if len(pin) > 4:
                     return "PIN is too long. Please enter a 4-digit number."
+
+
+# Callback to add a user
+@app.callback(
+    Output("user-status", "children"),
+    [Input("submit-user-btn", "n_clicks")],
+    [
+        State("user-email-input", "value"),
+        State("user-name-input", "value"),
+        State("user-guest-checkbox", "value"),
+        State("dash_app_context", "data"),
+    ],
+)
+def add_user(n_clicks, email, name, is_guest, dash_app_context):
+    if n_clicks > 0:
+        if not email:
+            return "Please enter an email address."
+        if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
+            if user["guest"]:
+                return "Guests cannot add other users."  # todo: don't show the form in the first place
+            apartment_number = user["apartment_number"]
+            creator_email = user["email"]
+            data = load_data()
+            if not name:
+                name = email
+            data["apartments"][apartment_number]["users"].append(
+                {
+                    "email": email,
+                    "name": name,
+                    "guest": is_guest,
+                    "creator": creator_email,
+                }
+            )
+            save_data(data)
+            return "User added."
+        return "Session has expired. Please log in again."
 
 
 @app.callback(
