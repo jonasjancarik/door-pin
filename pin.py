@@ -63,13 +63,13 @@ def main():
         print("\n1. Create PIN\n2. Delete PIN\n3. List PINs\n4. Exit")
         choice = input("Enter your choice: ")
         if choice == "1":
-            apartment_number = input("Enter apartment number (two digits): ")
+            apartment_number = input("Enter apartment number: ")
             pin = input("Enter PIN: ")
             creator_email = input("Enter your email address: ")
             label = input("Enter a label for this PIN: ")
             create_pin(apartment_number, pin, creator_email, label)
         elif choice == "2":
-            apartment_number = input("Enter apartment number (two digits): ")
+            apartment_number = input("Enter apartment number: ")
             pins = data["apartments"][apartment_number].get("pins", [])
             if not pins:
                 print("No PINs stored for this apartment.")
