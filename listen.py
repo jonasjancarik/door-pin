@@ -61,7 +61,8 @@ async def handle_keyboard(keyboard):
 
                     if "KEY_" in key_code:
                         key = key_code.split("_")[1].replace("KP", "")
-                        if key.isdigit():
+                        # check if key is an alphanumeric character
+                        if key.isdigit() or key.isalpha():
                             input_pin += key
                             if args.debug:
                                 print(
@@ -127,7 +128,9 @@ async def handle_keyboard(keyboard):
                                                     flush=True,
                                                 )
                         else:
-                            logging.info("A non-digit key was pressed. Input reset.")
+                            logging.info(
+                                "Something else than a number or a letter was pressed. Input reset."
+                            )
                             input_pin = ""
                             print(
                                 "\nEnter PIN or scan RFID: ",
