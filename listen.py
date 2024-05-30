@@ -2,14 +2,18 @@ import asyncio
 import logging
 from evdev import InputDevice, categorize, ecodes, list_devices
 import utils
+import argparse
 
-# Configuration
-PIN_LENGTH = 4
-RFID_LENGTH = 10
-INPUT_RESET_TIMEOUT = 10  # seconds
+args = argparse.ArgumentParser()
+args.add_argument("--debug", action="store_true", help="Enable debug mode")
+args.add_argument("--timeout", type=int, default=10, help="Input timeout in seconds")
+args.add_argument("--pin-length", type=int, default=4, help="PIN length")
+args.add_argument("--rfid-length", type=int, default=10, help="RFID length")
+args = args.parse_args()
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG if args.debug else logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
 
@@ -35,15 +39,15 @@ async def handle_keyboard(keyboard):
     input_pin = ""
     last_input_time = asyncio.get_event_loop().time()
     logging.info(f"Using keyboard: {keyboard.name} at {keyboard.path}")
-    print("Enter User ID and PIN or scan RFID: ", end="", flush=True)
+    print("Enter PIN or scan RFID: ", end="", flush=True)
 
     try:
         async for event in keyboard.async_read_loop():
             current_time = asyncio.get_event_loop().time()
-            if current_time - last_input_time > INPUT_RESET_TIMEOUT:
+            if current_time - last_input_time > args.input_reset_timeout:
                 input_pin = ""
                 logging.info("Input reset due to timeout.")
-                print("\nEnter User ID and PIN or scan RFID: ", end="", flush=True)
+                print("\nEnter PIN or scan RFID: ", end="", flush=True)
 
             last_input_time = current_time
 
@@ -59,15 +63,22 @@ async def handle_keyboard(keyboard):
                         key = key_code.split("_")[1].replace("KP", "")
                         if key.isdigit():
                             input_pin += key
-                            print(
-                                f"\rEnter User ID and PIN or scan RFID: {input_pin}",
-                                end="",
-                                flush=True,
-                            )
+                            if args.debug:
+                                print(
+                                    f"\rEnter PIN or scan RFID: {input_pin}",
+                                    end="",
+                                    flush=True,
+                                )
+                            else:
+                                print(
+                                    f"\rEnter PIN or scan RFID: {'*' * len(input_pin)}",
+                                    end="",
+                                    flush=True,
+                                )
 
                             # Check if PIN is valid
-                            if len(input_pin) >= PIN_LENGTH:
-                                pin = input_pin[-PIN_LENGTH:]
+                            if len(input_pin) >= args.pin_length:
+                                pin = input_pin[-args.pin_length :]
 
                                 data = utils.load_data()
 
@@ -86,14 +97,14 @@ async def handle_keyboard(keyboard):
                                                 open_door()
                                                 input_pin = ""
                                                 print(
-                                                    "Enter User ID and PIN or scan RFID: ",
+                                                    "Enter PIN or scan RFID: ",
                                                     end="",
                                                     flush=True,
                                                 )
 
                             # Check if RFID is valid
-                            if len(input_pin) >= RFID_LENGTH:
-                                rfid_input = input_pin[-RFID_LENGTH:]
+                            if len(input_pin) >= args.rfid_length:
+                                rfid_input = input_pin[-args.rfid_length :]
 
                                 data = utils.load_data()
                                 for apartment_number in data["apartments"]:
@@ -111,7 +122,7 @@ async def handle_keyboard(keyboard):
                                                 open_door()
                                                 input_pin = ""
                                                 print(
-                                                    "Enter User ID and PIN or scan RFID: ",
+                                                    "Enter PIN or scan RFID: ",
                                                     end="",
                                                     flush=True,
                                                 )
@@ -119,7 +130,7 @@ async def handle_keyboard(keyboard):
                             logging.info("A non-digit key was pressed. Input reset.")
                             input_pin = ""
                             print(
-                                "\nEnter User ID and PIN or scan RFID: ",
+                                "\nEnter PIN or scan RFID: ",
                                 end="",
                                 flush=True,
                             )
