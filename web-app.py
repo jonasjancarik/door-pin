@@ -559,6 +559,21 @@ def handle_login(search, n_clicks, login_code_input, dash_app_context):
 def submit_pin_data(n_clicks, pin, label, dash_app_context):
     if n_clicks > 0:
         if pin and len(pin) == 4 and pin.isdigit():
+            # check if PIN is not insecure
+            if pin in [
+                "1234",
+                "0000",
+                "1111",
+                "2222",
+                "3333",
+                "4444",
+                "5555",
+                "6666",
+                "7777",
+                "8888",
+                "9999",
+            ]:
+                return "This PIN is not secure. PINs like 1234 or 1111 are not allowed. Please choose a different one."
             if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
                 apartment_number = user["apartment_number"]
                 creator_email = user["email"]
