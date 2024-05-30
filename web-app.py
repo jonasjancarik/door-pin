@@ -9,7 +9,6 @@ import logging
 from secrets import token_urlsafe
 from flask import request
 from pin import create_pin
-from device import add_device
 from utils import unlock_door, hash_secret, load_data, save_data
 from urllib.parse import parse_qs
 import random
@@ -322,28 +321,6 @@ app.layout = html.Div(
                             dbc.ModalHeader("Settings"),
                             dbc.ModalBody(
                                 [
-                                    html.H4("Device Registration", className="mb-3"),
-                                    dbc.Input(
-                                        id="mac-input",
-                                        placeholder="Enter MAC address",
-                                        type="text",
-                                        className="mb-2",
-                                    ),
-                                    dbc.Input(
-                                        id="label-input",
-                                        placeholder="Enter device label",
-                                        type="text",
-                                        className="mb-2",
-                                    ),
-                                    dbc.Button(
-                                        "Submit Device",
-                                        id="submit-device-btn",
-                                        n_clicks=0,
-                                        color="success",
-                                        className="mb-4 w-100",
-                                        style={"cursor": "pointer"},
-                                    ),
-                                    html.Div(id="device-status"),
                                     html.H4("PIN Registration", className="mb-3"),
                                     dbc.Input(
                                         id="pin-input",
@@ -600,27 +577,6 @@ def submit_pin_data(n_clicks, pin, label, dash_app_context):
                     return "PIN is too short. Please enter a 4-digit number."
                 if len(pin) > 4:
                     return "PIN is too long. Please enter a 4-digit number."
-
-
-@app.callback(
-    Output("device-status", "children"),
-    [Input("submit-device-btn", "n_clicks")],
-    [
-        State("mac-input", "value"),
-        State("label-input", "value"),
-        State("dash_app_context", "data"),
-    ],
-)
-def submit_device_data(n_clicks, mac, label, dash_app_context):
-    if n_clicks > 0:
-        if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
-            apartment_number = user["apartment_number"]
-            creator_email = user["email"]
-            if not label:
-                label = time.strftime("%Y-%m-%d %H:%M:%S")
-            add_device(apartment_number, label, creator_email, mac)
-            return "Device successfully registered."
-        return "Session has expired. Please log in again."
 
 
 @app.callback(
