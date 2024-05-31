@@ -57,12 +57,12 @@ def send_magic_link(email):
     for apartment_number in data["apartments"]:
         for user in data["apartments"][apartment_number]["users"]:
             if user["email"] == email:
-                user_tokens = user.setdefault("tokens", [])
-                user_tokens.append(
+                user_login_codes = user.setdefault("login_codes", [])
+                user_login_codes.append(
                     {
                         "hash": hashed_token,
-                        "expiration": int(time.time()) + 31536000,
-                    }  # 1 year expiration
+                        "expiration": int(time.time()) + 3600,
+                    }  # 60 minutes expiration
                 )
                 break
         else:
@@ -195,6 +195,30 @@ def exchange_code(login_code: LoginCode):
 def unlock(_: dict = Depends(authenticate_user)):
     utils.unlock_door()
     return {"message": "Door unlocked successfully"}
+
+
+@app.post("/user/create")
+def create_user(new_user: dict, user: dict = Depends(authenticate_user)):
+    data = utils.load_data()
+    for apartment_number, apartment_data in data["apartments"].items():
+        for user_data in apartment_data["users"]:
+            if user_data["email"] == user["email"]:
+                if not user_data.get("guest", False):
+                    for existing_user in apartment_data["users"]:
+                        if existing_user["email"] == new_user["email"]:
+                            raise HTTPException(
+                                status_code=409, detail="User already exists"
+                            )
+                    new_user["creator"] = user["email"]
+                    apartment_data["users"].append(new_user)
+                    utils.save_data(data)
+                    return {"status": "user created"}
+                else:
+                    raise HTTPException(
+                        status_code=403, detail="Guests cannot create users"
+                    )
+
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 if __name__ == "__main__":

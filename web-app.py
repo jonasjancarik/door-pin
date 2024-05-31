@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 import time
 import os
 import logging
-from flask import request
 from pin import create_pin
 from utils import hash_secret, load_data, save_data
 from urllib.parse import parse_qs
@@ -529,7 +528,7 @@ def handle_login(search, n_clicks, login_code_input, dash_app_context):
             dash_app_context.get("web_app_token") if dash_app_context else None
         )
 
-        if not web_app_token and login_code:
+        if not web_app_token and login_code and login_code != "logout":
             if response := exchange_code_for_token(login_code):
                 return (
                     True,
@@ -622,25 +621,38 @@ def add_user(n_clicks, email, name, is_guest, dash_app_context):
     if n_clicks > 0:
         if not email:
             return "Please enter an email address."
-        if user := authenticate(web_app_token=dash_app_context["web_app_token"]):
-            if user["guest"]:
-                return "Guests cannot add other users."  # todo: don't show the form in the first place
-            apartment_number = user["apartment_number"]
-            creator_email = user["email"]
-            data = load_data()
-            if not name:
-                name = email
-            data["apartments"][apartment_number]["users"].append(
-                {
-                    "email": email,
-                    "name": name,
-                    "guest": is_guest,
-                    "creator": creator_email,
-                }
+
+        new_user = {"email": email, "name": name if name else email, "guest": is_guest}
+        try:
+            response = requests.post(
+                f"{os.getenv('API_URL')}/user/create",
+                json=new_user,
+                headers={
+                    "Authorization": f"Bearer {dash_app_context["web_app_token"]}"
+                },
             )
-            save_data(data)
-            return "User added."
-        return "Session has expired. Please log in again."
+        except requests.exceptions.ConnectionError:
+            logging.error("Failed to connect to the API.")
+            return "Failed to connect to the API."
+        except (
+            requests.exceptions.HTTPError
+        ) as e:  # todo: what exactly does this catch if not error status codes?
+            logging.error(f"Failed to add user: {e}")
+            return "Failed to add user."
+
+        if response.status_code != 200:
+            if (
+                response.status_code == 403
+                and response.json().get("detail") == "Guests cannot create users"
+            ):
+                return "Guests cannot create users."  # todo: don't show the option to add users to guests
+            elif response.status_code == 409:
+                return "User already exists."
+            else:
+                return "Failed to add user."
+
+        return "User added."
+        # return "Session has expired. Please log in again."
 
 
 @app.callback(
