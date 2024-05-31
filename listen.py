@@ -44,7 +44,7 @@ async def handle_keyboard(keyboard):
     try:
         async for event in keyboard.async_read_loop():
             current_time = asyncio.get_event_loop().time()
-            if current_time - last_input_time > args.input_reset_timeout:
+            if current_time - last_input_time > args.timeout:
                 input_pin = ""
                 logging.info("Input reset due to timeout.")
                 print("\nEnter PIN or scan RFID: ", end="", flush=True)
