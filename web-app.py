@@ -9,10 +9,11 @@ import logging
 from secrets import token_urlsafe
 from flask import request
 from pin import create_pin
-from utils import unlock_door, hash_secret, load_data, save_data
+from utils import hash_secret, load_data, save_data
 from urllib.parse import parse_qs
 import random
 from dash_svg import Svg, Circle
+import requests
 
 
 # Load environment variables
@@ -59,38 +60,33 @@ def generate_and_save_web_app_token(email, apartment_number):
     return token_web
 
 
-def authenticate(login_code=None, web_app_token=None):
-    data = load_data()
+def exchange_code_for_token(login_code):
+    try:
+        response = requests.post(
+            f"{os.getenv('API_URL')}/exchange-code",
+            json={"login_code": str(login_code)},
+            # data=str(login_code),
+        )
+    except requests.exceptions.ConnectionError:
+        logging.error("Failed to connect to the API.")
+        return None
+    if response.status_code == 200:
+        return response.json()
+    else:
+        if json_response := response.json():
+            logging.error(f"Failed to exchange code: {json_response}")
+        else:
+            logging.error(f"Failed to exchange code: {response.text}")
+    return None
 
-    if login_code:
-        login_code_hash = hash_secret(login_code)
-        for apartment_number, apartment_data in data["apartments"].items():
-            for user in apartment_data["users"]:
-                for code in user.get("login_codes", []):
-                    if code["hash"] == login_code_hash and code["expiration"] > int(
-                        time.time()
-                    ):
-                        user["login_codes"].remove(code)
-                        save_data(data)
-                        return {
-                            "apartment_number": apartment_number,
-                            "email": user["email"],
-                            "name": user["name"],
-                        }
-    if web_app_token:
-        hashed_token = hash_secret(web_app_token)
-        for apartment_number, apartment_data in data["apartments"].items():
-            for user in apartment_data["users"]:
-                for token in user.get("tokens", []):
-                    if hashed_token == token["hash"] and token["expiration"] > int(
-                        time.time()
-                    ):
-                        return {
-                            "apartment_number": apartment_number,
-                            "email": user["email"],
-                            "name": user["name"],
-                        }
-    return False
+
+def authenticate(token=None):
+    response = requests.post(
+        f"{os.getenv('API_URL')}/authenticate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if response.status_code == 200:
+        return response.json()["user"]
 
 
 def send_magic_link(email, login_code):
@@ -557,22 +553,37 @@ def handle_login(search, n_clicks, login_code_input, dash_app_context):
             dash_app_context.get("web_app_token") if dash_app_context else None
         )
 
-        if user := authenticate(login_code=login_code, web_app_token=web_app_token):
+        if not web_app_token and login_code:
+            if response := exchange_code_for_token(login_code):
+                return (
+                    True,
+                    {
+                        "web_app_token": response["access_token"],
+                        "user": response["user"],
+                    },
+                )
+            else:
+                return (
+                    False,
+                    {"web_app_token": None},
+                )
+        elif web_app_token:
+            if user := authenticate(web_app_token):
+                return (
+                    True,
+                    {
+                        "web_app_token": web_app_token
+                        or generate_and_save_web_app_token(
+                            user["email"], user["apartment_number"]
+                        ),
+                        "user": user,
+                    },
+                )
+        else:  # edge case - no token and no login code
             return (
-                True,
-                {
-                    "web_app_token": web_app_token
-                    or generate_and_save_web_app_token(
-                        user["email"], user["apartment_number"]
-                    ),
-                    "user": user,
-                },
+                False,
+                {"web_app_token": None},
             )
-
-        return (
-            False,
-            {"web_app_token": None},
-        )
 
 
 # Device and PIN submission callbacks
@@ -695,7 +706,6 @@ def handle_logout(n_clicks, search):
     prevent_initial_call=True,
 )
 def handle_unlock_door(n_clicks):
-    print("handle_unlock_door")
     return (
         "unlocking",
         True,
@@ -721,8 +731,25 @@ def handle_unlock_door(n_clicks):
 )
 def toggle_unlock_button(unlock_status, dash_app_context):
     if unlock_status == "unlocking":
-        if authenticate(web_app_token=dash_app_context["web_app_token"]):
-            unlock_door()
+        token = dash_app_context["web_app_token"]
+        try:
+            response = requests.post(
+                f"{os.getenv('API_URL')}/unlock",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except requests.exceptions.ConnectionError:
+            logging.error("Failed to connect to the lock.")
+            return (
+                True,  # Keep button disabled
+                "Failed to unlock door - couldn't connect to the lock.",  # Change button text to indicate failure
+                "Failed",  # Error message
+                False,  # Authentication status
+                {
+                    "transition": "stroke-dashoffset 0.5s linear",
+                    "strokeDashoffset": "0",  # This resets the stroke quickly
+                },
+            )
+        if response.status_code == 200:
             time.sleep(7)  # The lock stays open for 7 seconds
             # Animation for the SVG circle
             return (
@@ -735,12 +762,23 @@ def toggle_unlock_button(unlock_status, dash_app_context):
                     "strokeDashoffset": "0",  # This resets the stroke quickly
                 },
             )
-        else:
+        elif response.status_code == 401:
             return (
                 True,  # Keep button disabled
                 "Log in again to unlock door.",  # Change button text to indicate re-login
                 "Session expired, please log in again.",  # Error message
                 False,  # Authentication status
+                {
+                    "transition": "stroke-dashoffset 0.5s linear",
+                    "strokeDashoffset": "0",  # This resets the stroke quickly
+                },
+            )
+        else:
+            return (
+                True,  # Keep button disabled
+                "Failed to unlock door.",  # Change button text to indicate failure
+                "Failed",  # Error message
+                True,  # Authentication status
                 {
                     "transition": "stroke-dashoffset 0.5s linear",
                     "strokeDashoffset": "0",  # This resets the stroke quickly
