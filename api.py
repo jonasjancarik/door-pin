@@ -5,7 +5,7 @@ import time
 import boto3
 import logging
 from botocore.exceptions import ClientError
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 import utils
@@ -118,6 +118,30 @@ def authenticate_user(web_app_token: str = Depends(oauth2_scheme)):
 @app.post("/authenticate")
 def authenticate(user: dict = Depends(authenticate_user)):
     return {"status": "authenticated", "user": user}
+
+
+def get_current_token(request: Request) -> str:
+    authorization: str = request.headers.get("Authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return authorization.replace("Bearer ", "")
+
+
+@app.post("/logout")
+def logout(
+    user: dict = Depends(authenticate_user),
+    current_token: str = Depends(get_current_token),
+):
+    data = utils.load_data()
+    for apartment_number, apartment_data in data["apartments"].items():
+        for user_data in apartment_data["users"]:
+            if user_data["email"] == user["email"]:
+                if current_token in user_data.get("tokens", []):
+                    user_data["tokens"].remove(current_token)
+                    utils.save_data(data)
+                    return {"status": "logged out"}
+
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 class LoginCode(BaseModel):

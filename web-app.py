@@ -514,7 +514,7 @@ def update_login_stage(send_link_clicks, code_input_submit, current_stage):
 def handle_login(search, n_clicks, login_code_input, dash_app_context):
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
-    if triggered_id == "logout-btn" and n_clicks:
+    if triggered_id == "logout-btn" and n_clicks or search == "?token=logout":
         return (
             False,
             {"web_app_token": None},
@@ -644,28 +644,27 @@ def add_user(n_clicks, email, name, is_guest, dash_app_context):
 
 
 @app.callback(
-    Output("url", "href"),
+    [
+        Output("url", "href"),
+        Output("authenticated", "data", allow_duplicate=True),
+        Output("dash_app_context", "data", allow_duplicate=True),
+    ],
     [Input("logout-btn", "n_clicks")],
     [State("url", "search")],
     prevent_initial_call=True,
 )
 def handle_logout(n_clicks, search):
-    data = load_data()
     try:
-        token_hashed = hash_secret(
-            get_login_code_from_url(search) or request.cookies.get("web_app_token")
-        )
-    except ValueError:
-        return "/"
-    for apartment_number, apartment_data in data["apartments"].items():
-        for user in apartment_data["users"]:
-            for token in user.get("tokens", []):
-                if token["hash"] == token_hashed:
-                    user["tokens"].remove(token)
-                    save_data(data)
-                    break
-    ctx.response.delete_cookie("web_app_token")
-    return "/?token=logout"
+        requests.post(os.getenv("API_URL") + "/logout")
+    except requests.exceptions.ConnectionError:
+        logging.error("Failed to connect to the API.")
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"Failed to log out: {e}")
+    except requests.exceptions.RequestException as e:
+        # This will capture general request-related errors, including invalid responses
+        logging.error(f"An error occurred: {e}")
+
+    return "/?token=logout", False, {"web_app_token": None}
 
 
 @app.callback(
