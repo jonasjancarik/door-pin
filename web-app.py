@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 import time
 import os
 import logging
-from secrets import token_urlsafe
 from flask import request
 from pin import create_pin
 from utils import hash_secret, load_data, save_data
@@ -35,29 +34,6 @@ app.title = os.getenv("WEB_APP_TITLE", "House Access Control System")
 
 def random_index():
     return random.randint(0, 999999)
-
-
-def generate_and_save_web_app_token(email, apartment_number):
-    token_web = token_urlsafe(16)
-    hashed_token = hash_secret(token_web)
-
-    data = load_data()
-    for user in data["apartments"][apartment_number]["users"]:
-        if user["email"] == email:
-            user_tokens = user.setdefault("tokens", [])
-            user_tokens.append(
-                {
-                    "hash": hashed_token,
-                    "expiration": int(time.time()) + 31536000,
-                }  # 1 year expiration
-            )
-            break
-    else:
-        data["apartments"][apartment_number]["users"].append(
-            {"email": email, "name": email, "token_hashes": [hashed_token]}
-        )
-    save_data(data)
-    return token_web
 
 
 def exchange_code_for_token(login_code):
@@ -572,10 +548,7 @@ def handle_login(search, n_clicks, login_code_input, dash_app_context):
                 return (
                     True,
                     {
-                        "web_app_token": web_app_token
-                        or generate_and_save_web_app_token(
-                            user["email"], user["apartment_number"]
-                        ),
+                        "web_app_token": web_app_token,
                         "user": user,
                     },
                 )

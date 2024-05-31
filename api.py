@@ -49,7 +49,28 @@ def send_magic_link_endpoint(request: LoginRequest):
     raise HTTPException(status_code=400, detail="Email not found")
 
 
-def send_magic_link(email, login_code):
+def send_magic_link(email):
+    login_code = token_urlsafe(16)
+    hashed_token = utils.hash_secret(login_code)
+
+    data = utils.load_data()
+    for apartment_number in data["apartments"]:
+        for user in data["apartments"][apartment_number]["users"]:
+            if user["email"] == email:
+                user_tokens = user.setdefault("tokens", [])
+                user_tokens.append(
+                    {
+                        "hash": hashed_token,
+                        "expiration": int(time.time()) + 31536000,
+                    }  # 1 year expiration
+                )
+                break
+        else:
+            data["apartments"][apartment_number]["users"].append(
+                {"email": email, "name": email, "token_hashes": [hashed_token]}
+            )
+    utils.save_data(data)
+
     url_to_use = os.getenv(
         "WEB_APP_URL", f"http://localhost:{os.getenv('WEB_APP_PORT', 8050)}/"
     )
