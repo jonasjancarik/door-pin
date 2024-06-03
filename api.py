@@ -12,6 +12,9 @@ import utils
 from secrets import token_urlsafe
 import random
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 app = FastAPI()
