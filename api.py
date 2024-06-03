@@ -10,8 +10,21 @@ from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 import utils
 from secrets import token_urlsafe
+import random
+from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI()
+
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -33,25 +46,9 @@ class AuthResponse(BaseModel):
 
 @app.post("/send-magic-link")
 def send_magic_link_endpoint(request: LoginRequest):
-    login_code = token_urlsafe(8)  # Generate a short-lived login code
-    data = utils.load_data()
-    for apartment_number, apartment_data in data["apartments"].items():
-        for user in apartment_data["users"]:
-            if user["email"] == request.email:
-                user["login_codes"].append(
-                    {
-                        "hash": utils.hash_secret(login_code),
-                        "expiration": int(time.time()) + 300,
-                    }
-                )
-                utils.save_data(data)
-                return send_magic_link(request.email, login_code)
-    raise HTTPException(status_code=400, detail="Email not found")
-
-
-def send_magic_link(email):
-    login_code = token_urlsafe(16)
+    login_code = "".join(random.choices("0123456789", k=6))
     hashed_token = utils.hash_secret(login_code)
+    email = request.email
 
     data = utils.load_data()
     for apartment_number in data["apartments"]:

@@ -1,13 +1,10 @@
 from dash import Dash, html, dcc, Input, Output, State, ctx, ALL
 import dash_bootstrap_components as dbc
-import boto3
-from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 import time
 import os
 import logging
 from pin import create_pin
-from utils import hash_secret, load_data, save_data
 from urllib.parse import parse_qs
 import random
 from dash_svg import Svg, Circle
@@ -62,32 +59,6 @@ def authenticate(token=None):
     )
     if response.status_code == 200:
         return response.json()["user"]
-
-
-def send_magic_link(email, login_code):
-    url_to_use = os.getenv(
-        "WEB_APP_URL", f"http://localhost:{os.getenv('WEB_APP_PORT', 8050)}/"
-    )
-    if not url_to_use.endswith("/"):
-        url_to_use += "/"
-    ses_client = boto3.client("ses", region_name=os.getenv("AWS_REGION"))
-    sender = os.getenv("AWS_SES_SENDER_EMAIL")
-    subject = "Your Login Code"
-    body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='{url_to_use}?login_code={login_code}'>Log In</a></p></center></body></html>"""
-    try:
-        response = ses_client.send_email(
-            Destination={"ToAddresses": [email]},
-            Message={
-                "Body": {"Html": {"Charset": "UTF-8", "Data": body_html}},
-                "Subject": {"Charset": "UTF-8", "Data": subject},
-            },
-            Source=sender,
-        )
-        print(f"Email sent! {response}")
-        return "A login code has been sent to your email. Please enter the code below or click the link in the email."
-    except ClientError as e:
-        logging.error(f"Failed to send email: {e}")
-        return "Failed to send email."
 
 
 # Define the app layout
@@ -393,28 +364,25 @@ app.layout = html.Div(
 )
 def handle_send_link(n_clicks, email):
     if n_clicks > 0 and email:
-        data = load_data()
-        for apartment_number, apartment_data in data["apartments"].items():
-            for user in apartment_data["users"]:
-                if user["email"] == email:
-                    login_code = "".join(random.choices("0123456789", k=6))
-                    user.setdefault("login_codes", []).append(
-                        {
-                            "hash": hash_secret(login_code),
-                            "expiration": int(time.time()) + 300,
-                        }  # 5 minutes expiration
-                    )
-                    save_data(data)
-                    return (
-                        send_magic_link(email, login_code),
-                        {"display": "none"},
-                        {"display": "block"},
-                    )
-        return (
-            "Email not found in the database.",
-            {"display": "block"},
-            {"display": "none"},
-        )
+        try:
+            response = requests.post(
+                os.getenv("API_URL") + "/send-magic-link", json={"email": email}
+            )
+        except requests.exceptions.ConnectionError:
+            logging.error("Failed to connect to the API.")
+            return (
+                "Failed to connect to the API.",
+                {"display": "block"},
+                {"display": "none"},
+            )
+        if response.status_code != 200:
+            return "Failed to send email.", {"display": "block"}, {"display": "none"}
+        else:
+            return (
+                "A login code has been sent to your email. Please enter the code below or click the link in the email.",
+                {"display": "none"},
+                {"display": "block"},
+            )
     return "", {"display": "block"}, {"display": "none"}
 
 
