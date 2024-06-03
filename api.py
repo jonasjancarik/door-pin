@@ -150,6 +150,9 @@ class LoginCode(BaseModel):
 
 @app.post("/exchange-code", response_model=AuthResponse)
 def exchange_code(login_code: LoginCode):
+    if not login_code.login_code:
+        raise HTTPException(status_code=400, detail="Invalid login code")
+
     login_code_hashed = utils.hash_secret(
         login_code.login_code
     )  # todo: can we extract directly?
