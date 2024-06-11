@@ -226,6 +226,14 @@ def register_rfid(rfid_request: RFIDRequest, user: dict = Depends(authenticate_u
     return {"status": "RFID registered"}
 
 
+@app.post("/rfid/read")
+def read_rfid(user: dict = Depends(authenticate_user)):
+    rfid = utils.read_rfid_from_keyboards(timeout=30)
+    if not rfid:
+        raise HTTPException(status_code=404, detail="RFID not found")
+    return {"rfid": rfid}
+
+
 @app.delete("/rfid/delete")
 def delete_rfid_endpoint(
     user_id: int, hashed_rfid: str, user: dict = Depends(authenticate_user)
