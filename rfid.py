@@ -45,7 +45,12 @@ def read_rfid_from_keyboards(timeout=None):
     Raises:
         None
     """
-    keyboards = find_keyboards()
+    try:
+        keyboards = find_keyboards()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
     if not keyboards:
         print("No keyboards found.")
         return None

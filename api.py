@@ -13,6 +13,7 @@ import random
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import db
+import rfid
 
 load_dotenv()
 
@@ -226,12 +227,12 @@ def register_rfid(rfid_request: RFIDRequest, user: dict = Depends(authenticate_u
     return {"status": "RFID registered"}
 
 
-@app.post("/rfid/read")
-def read_rfid(user: dict = Depends(authenticate_user)):
-    rfid = utils.read_rfid_from_keyboards(timeout=30)
-    if not rfid:
+@app.get("/rfid/read")
+def read_rfid(timeout: int, user: dict = Depends(authenticate_user)):
+    rfid_uuid = rfid.read_rfid_from_keyboards(timeout=timeout if timeout <= 30 else 30)
+    if not rfid_uuid:
         raise HTTPException(status_code=404, detail="RFID not found")
-    return {"rfid": rfid}
+    return {"uuid": rfid_uuid}
 
 
 @app.delete("/rfid/delete")
