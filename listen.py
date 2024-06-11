@@ -3,13 +3,27 @@ import logging
 from evdev import InputDevice, categorize, ecodes, list_devices
 import utils
 import argparse
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 args = argparse.ArgumentParser()
 args.add_argument("--debug", action="store_true", help="Enable debug mode")
 args.add_argument("--timeout", type=int, default=10, help="Input timeout in seconds")
 args.add_argument("--pin-length", type=int, default=4, help="PIN length")
-args.add_argument("--rfid-length", type=int, default=10, help="RFID length")
+args.add_argument(
+    "--rfid-length",
+    type=int,
+    help="RFID length (overrides RFID_LENGTH env var). Defaults to 10 even without the env var.",
+)
 args = args.parse_args()
+
+if args.rfid_length:
+    RFID_LENGTH = args.rfid_length
+else:
+    RFID_LENGTH = os.getenv("RFID_LENGTH", 10)
+
 
 logging.basicConfig(
     level=logging.DEBUG if args.debug else logging.INFO,
@@ -104,8 +118,8 @@ async def handle_keyboard(keyboard):
                                                 )
 
                             # Check if RFID is valid
-                            if len(input_pin) >= args.rfid_length:
-                                rfid_input = input_pin[-args.rfid_length :]
+                            if len(input_pin) >= RFID_LENGTH:
+                                rfid_input = input_pin[-RFID_LENGTH:]
 
                                 data = utils.load_data()
                                 for apartment_number in data["apartments"]:

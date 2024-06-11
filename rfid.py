@@ -1,5 +1,9 @@
+from dotenv import load_dotenv
+import os
 import utils
 import db
+
+load_dotenv()
 
 try:
     from evdev import InputDevice, categorize, ecodes, list_devices
@@ -23,6 +27,20 @@ def find_keyboards():
 
 
 def read_rfid_from_keyboards():
+    """
+    Reads RFID input from keyboards (which can be an RFID reader).
+
+    This function searches for keyboards and continuously reads input events from them.
+    It expects the input events to be key down events and only considers digits as valid input.
+    Once it receives a complete RFID input of a specified length, it returns the RFID input.
+
+    Returns:
+        str: The RFID input.
+
+    Raises:
+        None
+
+    """
     keyboards = find_keyboards()
     if not keyboards:
         print("No keyboards found.")
@@ -46,10 +64,10 @@ def read_rfid_from_keyboards():
                             key = key_code.split("_")[1].replace("KP", "")
                             if key.isdigit():
                                 rfid_input += key
-                                rfid_input = rfid_input[-RFID_LENGTH:]
+                                rfid_input = rfid_input[-os.getenv("RFID_LENGTH", 10) :]
                                 print(f"\rScan RFID: {rfid_input}", end="", flush=True)
 
-                                if len(rfid_input) == RFID_LENGTH:
+                                if len(rfid_input) == os.getenv("RFID_LENGTH", 10):
                                     print(f"\nRFID input: {rfid_input}")
                                     return rfid_input
                             else:
