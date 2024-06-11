@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import os
 import utils
 import db
+import time
 
 load_dotenv()
 
@@ -26,20 +27,23 @@ def find_keyboards():
     return keyboards
 
 
-def read_rfid_from_keyboards():
+def read_rfid_from_keyboards(timeout=None):
     """
-    Reads RFID input from keyboards (which can be an RFID reader).
+    Reads RFID input from keyboards (which can be an RFID reader) with an optional timeout.
 
     This function searches for keyboards and continuously reads input events from them.
     It expects the input events to be key down events and only considers digits as valid input.
     Once it receives a complete RFID input of a specified length, it returns the RFID input.
+    If a timeout is specified and exceeded, the function returns None.
+
+    Args:
+        timeout (float, optional): The time limit in seconds for reading the RFID input. Defaults to None.
 
     Returns:
-        str: The RFID input.
+        str: The RFID input or None if the timeout is exceeded.
 
     Raises:
         None
-
     """
     keyboards = find_keyboards()
     if not keyboards:
@@ -48,8 +52,13 @@ def read_rfid_from_keyboards():
 
     print("Scan RFID: ", end="", flush=True)
     rfid_input = ""
+    start_time = time.time()
 
     while True:
+        if timeout is not None and (time.time() - start_time) > timeout:
+            print("\nTime limit exceeded. Failed to read RFID.")
+            return None
+
         for keyboard in keyboards:
             for event in keyboard.read_loop():
                 if event.type == ecodes.EV_KEY:
