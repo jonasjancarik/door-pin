@@ -6,6 +6,7 @@ users.json
 data.json
 data.db
 users.csv
+.ignore*
 
 # Ignore mock raspberry pi module for local development
 RPi
