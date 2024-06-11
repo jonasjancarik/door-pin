@@ -1,6 +1,7 @@
 import db
 import csv
 import os
+import sqlalchemy.exc as sqlalchemy_exc
 
 # Initialize the database
 db.init_db()
@@ -26,7 +27,10 @@ if load_csv.lower() == "y" or load_csv == "":
     # Loop through the CSV file and create a DB entry for each apartment
     for row in data:
         apartment_number = row["apartment_number"]
-        db.add_apartment(apartment_number)
+        try:
+            db.add_apartment(apartment_number)
+        except sqlalchemy_exc.IntegrityError:
+            print(f"Apartment {apartment_number} already exists.")
         row["admin"] = (
             True if row["admin"].lower() == "true" or row["admin"] == "1" else False
         )
