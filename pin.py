@@ -1,91 +1,64 @@
 import utils
-import datetime
+import db
 
 
-def create_pin(apartment_number, pin, creator_email, label):
-    data = utils.load_data()
+def create_pin(creator_email, pin, label):
+    user_id = db.get_user(creator_email).id
     salt = utils.generate_salt()
     hashed_pin = utils.hash_secret(salt=salt, payload=pin)
-    entry = {
-        "label": label,
-        "hashed_pin": hashed_pin,
-        "salt": salt,
-        "creator_email": creator_email,
-        "created_at": datetime.datetime.now().isoformat(),
-    }
-    data["apartments"].setdefault(
-        apartment_number, {"users": [], "pins": [], "devices": []}
-    )
-    data["apartments"][apartment_number].setdefault("pins", [])
-    data["apartments"][apartment_number]["pins"].append(entry)
-    utils.save_data(data)
-    print(f"New PIN for apartment number {apartment_number} stored.")
+
+    pin = db.save_pin(user_id, hashed_pin, salt, label)
+
+    print("New PIN for stored.")
 
 
-def delete_pin(apartment_number, hashed_pin):
-    """Delete an existing PIN entry."""
-    data = utils.load_data()
-
-    if apartment_number not in data["apartments"]:
-        print("Apartment number not found.")
-        return False
-    if "pins" not in data["apartments"][apartment_number]:
-        print("No PINs stored for this apartment.")
-        return False
-    new_pins = [
-        pin
-        for pin in data["apartments"][apartment_number]["pins"]
-        if pin["hashed_pin"] != hashed_pin
-    ]
-    data["apartments"][apartment_number]["pins"] = new_pins
-    utils.save_data(data)
-    print("PIN not found.")
-    return False
-
-
-def list_pins():
+def list_pins(apartment_number):
     """List all PINs."""
-    data = utils.load_data()
-    for apartment_number, apartment in data["apartments"].items():
-        print(f"Apartment Number: {apartment_number}")
-        if "pins" not in apartment or not apartment["pins"]:
-            print("  No PINs stored for this apartment.")
-            continue
-        for pin in apartment.get("pins", []):
-            print(
-                f"  Hashed PIN: {pin['hashed_pin']}, Creator: {pin['creator_email']}, Label: {pin['label']}, Created At: {pin['created_at']}"
-            )
+    apartment = db.get_apartment_by_number(apartment_number)
+
+    if not apartment:
+        print("Apartment not found.")
+        return []
+
+    pins = db.get_pins_by_apartment(apartment.id)
+
+    print("PINs:")
+    for i, pin in enumerate(pins, start=1):
+        print(
+            f"{i}. User ID {pin['user_id']}, created at {pin['created_at']}"
+        )  # todo: fetch user email
+
+    return pins
 
 
 def main():
-    data = utils.load_data()
     while True:
         print("\n1. Create PIN\n2. Delete PIN\n3. List PINs\n4. Exit")
         choice = input("Enter your choice: ")
         if choice == "1":
-            apartment_number = input("Enter apartment number: ")
+            creator_email = input("Enter the user's email address: ")
             pin = input("Enter PIN: ")
-            creator_email = input("Enter your email address: ")
             label = input("Enter a label for this PIN: ")
-            create_pin(apartment_number, pin, creator_email, label)
+            create_pin(creator_email, pin, label)
         elif choice == "2":
             apartment_number = input("Enter apartment number: ")
-            pins = data["apartments"][apartment_number].get("pins", [])
-            if not pins:
-                print("No PINs stored for this apartment.")
-                continue
-            print("Select a PIN to delete:")
-            for index, pin in enumerate(pins):
-                print(
-                    f"{index + 1}. Created by {pin['creator_email']} on {pin['created_at']}"
-                )
+
+            pins = list_pins(apartment_number)
+
             choice = int(input("Enter the number of the PIN to delete: ")) - 1
             if 0 <= choice < len(pins):
-                if delete_pin(apartment_number, pins[choice]["hashed_pin"]):
+                try:
+                    pin_id = pins[choice]["id"]
+                    db.remove_pin(pin_id)
                     print("PIN deleted.")
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+            else:
+                print("Invalid choice, please try again.")
         elif choice == "3":
             print("\n")
-            list_pins()
+            apartment_number = input("Enter apartment number: ")
+            list_pins(apartment_number)
         elif choice == "4":
             print("Exiting...")
             break

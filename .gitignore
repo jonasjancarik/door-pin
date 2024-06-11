@@ -4,6 +4,8 @@ tokens.json
 devices.json
 users.json
 data.json
+data.db
+users.csv
 
 # Ignore mock raspberry pi module for local development
 RPi

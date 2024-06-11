@@ -1,4 +1,3 @@
-# main.py
 import uvicorn
 import os
 import time
@@ -13,9 +12,16 @@ from secrets import token_urlsafe
 import random
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import db
 
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 app = FastAPI()
 
@@ -47,29 +53,38 @@ class AuthResponse(BaseModel):
     user: dict
 
 
+class RFIDRequest(BaseModel):
+    apartment_number: str
+    rfid: str
+    label: str
+
+
+class PinRequest(BaseModel):
+    pin: str
+    label: str
+
+
+@app.on_event("startup")
+def on_startup():
+    db.init_db()
+
+
 @app.post("/send-magic-link")
 def send_magic_link_endpoint(request: LoginRequest):
+    success_message = (
+        "A login code has been sent to your email. Please enter the code below."
+    )
+
     login_code = "".join(random.choices("0123456789", k=6))
     hashed_token = utils.hash_secret(login_code)
     email = request.email
 
-    data = utils.load_data()
-    for apartment_number in data["apartments"]:
-        for user in data["apartments"][apartment_number]["users"]:
-            if user["email"] == email:
-                user_login_codes = user.setdefault("login_codes", [])
-                user_login_codes.append(
-                    {
-                        "hash": hashed_token,
-                        "expiration": int(time.time()) + 3600,
-                    }  # 60 minutes expiration
-                )
-                break
-        else:
-            data["apartments"][apartment_number]["users"].append(
-                {"email": email, "name": email, "token_hashes": [hashed_token]}
-            )
-    utils.save_data(data)
+    user = db.get_user(email)
+    if user:
+        db.save_login_code(user.id, hashed_token, int(time.time()) + 3600)
+    else:
+        logging.error(f"Login code requested for a non-existing user {email}.")
+        return success_message  # for security reasons, we don't want to leak if the user exists
 
     url_to_use = os.getenv(
         "WEB_APP_URL", f"http://localhost:{os.getenv('WEB_APP_PORT', 8050)}/"
@@ -90,27 +105,15 @@ def send_magic_link_endpoint(request: LoginRequest):
             Source=sender,
         )
         print(f"Email sent! {response}")
-        return "A login code has been sent to your email. Please enter the code below or click the link in the email."
+        return success_message
     except ClientError as e:
         logging.error(f"Failed to send email: {e}")
         raise HTTPException(status_code=500, detail="Failed to send email.")
 
 
 def authenticate_user(web_app_token: str = Depends(oauth2_scheme)):
-    data = utils.load_data()
-
-    hashed_token = utils.hash_secret(web_app_token)
-    for apartment_number, apartment_data in data["apartments"].items():
-        for user in apartment_data["users"]:
-            for token in user.get("tokens", []):
-                if hashed_token == token["hash"] and token["expiration"] > int(
-                    time.time()
-                ):
-                    return {
-                        "apartment_number": apartment_number,
-                        "email": user["email"],
-                        "name": user["name"],
-                    }
+    if user := db.get_user_by_token(web_app_token):
+        return user
 
     raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -132,14 +135,16 @@ def logout(
     user: dict = Depends(authenticate_user),
     current_token: str = Depends(get_current_token),
 ):
-    data = utils.load_data()
-    for apartment_number, apartment_data in data["apartments"].items():
-        for user_data in apartment_data["users"]:
-            if user_data["email"] == user["email"]:
-                if current_token in user_data.get("tokens", []):
-                    user_data["tokens"].remove(current_token)
-                    utils.save_data(data)
-                    return {"status": "logged out"}
+    email = user["email"]
+    user = db.get_user(email)
+    if user:
+        tokens = user.tokens if user.tokens else []
+        if tokens and current_token in [token.token_hash for token in tokens]:
+            token_to_remove = next(
+                token for token in tokens if token.token_hash == current_token
+            )
+            db.delete_token(token_to_remove.id)
+            return {"status": "logged out"}
 
     raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -153,43 +158,26 @@ def exchange_code(login_code: LoginCode):
     if not login_code.login_code:
         raise HTTPException(status_code=400, detail="Invalid login code")
 
-    login_code_hashed = utils.hash_secret(
-        login_code.login_code
-    )  # todo: can we extract directly?
-    data = utils.load_data()
+    user = db.get_user_by_login_code(login_code.login_code)
+    if user:
+        bearer_token = token_urlsafe(16)
+        bearer_token_hashed = utils.hash_secret(bearer_token)
+        db.save_token(
+            user.id, bearer_token_hashed, int(time.time()) + 31536000
+        )  # 1 year expiration
 
-    for apartment_number, apartment_data in data["apartments"].items():
-        for user in apartment_data["users"]:
-            for code in user.get("login_codes", []):
-                if code["hash"] == login_code_hashed and code["expiration"] > int(
-                    time.time()
-                ):
-                    bearer_token = token_urlsafe(16)
-                    bearer_token_hashed = utils.hash_secret(bearer_token)
-                    user["login_codes"].remove(code)
+        # remove login code
+        db.remove_login_code(user.id, login_code.login_code)
 
-                    tokens_copy = user.get("tokens", []).copy()
-                    for token in tokens_copy:
-                        if token["expiration"] < int(time.time()):
-                            user["tokens"].remove(token)
-
-                    user_tokens = user.setdefault("tokens", [])
-                    user_tokens.append(
-                        {
-                            "hash": bearer_token_hashed,
-                            "expiration": int(time.time()) + 31536000,
-                        }  # 1 year expiration
-                    )
-                    utils.save_data(data)
-                    return {
-                        "access_token": bearer_token,
-                        "token_type": "bearer",
-                        "user": {
-                            "apartment_number": apartment_number,
-                            "email": user["email"],
-                            "name": user["name"],
-                        },
-                    }
+        return {
+            "access_token": bearer_token,
+            "token_type": "bearer",
+            "user": {
+                "apartment_number": user.apartment.number,
+                "email": user.email,
+                "name": user.name,
+            },
+        }
 
     raise HTTPException(status_code=401, detail="Invalid or expired login code")
 
@@ -202,26 +190,115 @@ def unlock(_: dict = Depends(authenticate_user)):
 
 @app.post("/user/create")
 def create_user(new_user: dict, user: dict = Depends(authenticate_user)):
-    data = utils.load_data()
-    for apartment_number, apartment_data in data["apartments"].items():
-        for user_data in apartment_data["users"]:
-            if user_data["email"] == user["email"]:
-                if not user_data.get("guest", False):
-                    for existing_user in apartment_data["users"]:
-                        if existing_user["email"] == new_user["email"]:
-                            raise HTTPException(
-                                status_code=409, detail="User already exists"
-                            )
-                    new_user["creator"] = user["email"]
-                    apartment_data["users"].append(new_user)
-                    utils.save_data(data)
-                    return {"status": "user created"}
-                else:
-                    raise HTTPException(
-                        status_code=403, detail="Guests cannot create users"
-                    )
+    apartment_id = user.apartment.id
+    users = db.get_apartment_users(apartment_id)
+    for user_data in users:
+        if user_data.email == user["email"]:
+            if not user_data.guest:
+                for existing_user in users:
+                    if existing_user.email == new_user["email"]:
+                        raise HTTPException(
+                            status_code=409, detail="User already exists"
+                        )
+                new_user["creator_id"] = user["id"]
+                new_user["apartment_id"] = apartment_id
+                db.save_user(new_user)
+                return {"status": "user created"}
+            else:
+                raise HTTPException(
+                    status_code=403, detail="Guests cannot create users"
+                )
 
     raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@app.post("/rfid/register")
+def register_rfid(rfid_request: RFIDRequest, user: dict = Depends(authenticate_user)):
+    salt = utils.generate_salt()
+    hashed_rfid = utils.hash_secret(salt=salt, payload=rfid_request.rfid)
+    db.save_rfid(
+        user.id,
+        hashed_rfid,
+        salt,
+        rfid_request.label,
+        user["email"],
+    )
+    return {"status": "RFID registered"}
+
+
+@app.delete("/rfid/delete")
+def delete_rfid_endpoint(
+    user_id: int, hashed_rfid: str, user: dict = Depends(authenticate_user)
+):
+    if db.delete_rfid(user_id, hashed_rfid):
+        return {"status": "RFID deleted"}
+    raise HTTPException(status_code=404, detail="RFID not found")
+
+
+@app.get("/rfid/list")
+def list_rfids_endpoint():
+    rfids = db.get_all_rfids()
+    return [
+        {
+            "user_id": rfid.user_id,
+            "hashed_rfid": rfid.hashed_rfid,
+            "label": rfid.label,
+            "creator_email": rfid.creator_email,
+            "created_at": rfid.created_at,
+        }
+        for rfid in rfids
+    ]
+
+
+@app.post("/pin/create")
+def create_pin_endpoint(
+    pin_request: PinRequest, user: dict = Depends(authenticate_user)
+):
+    salt = utils.generate_salt()
+    hashed_pin = utils.hash_secret(salt=salt, payload=pin_request.pin)
+    user_id = db.get_user(user["email"]).id
+    pin = db.save_pin(user_id, hashed_pin, salt, pin_request.label)
+    return {"status": "PIN saved", "pin_id": pin.id}
+
+
+@app.post("/pin/update/{pin_id}")
+def update_pin_endpoint(
+    pin_id: int, pin_request: PinRequest, user: dict = Depends(authenticate_user)
+):
+    salt = utils.generate_salt()
+    hashed_pin = utils.hash_secret(salt=salt, payload=pin_request.pin)
+    pin = db.update_pin(pin_id, hashed_pin, salt, pin_request.label)
+    if pin:
+        return {"status": "PIN updated", "pin_id": pin.id}
+    raise HTTPException(status_code=404, detail="PIN not found")
+
+
+@app.get("/pin/user")
+def get_pins_by_user_endpoint(user: dict = Depends(authenticate_user)):
+    user_id = db.get_user(user["email"]).id
+    pins = db.get_pins_by_user(user_id)
+    return [
+        {
+            "id": pin.id,
+            "label": pin.label,
+            "created_at": pin.created_at,
+        }
+        for pin in pins
+    ]
+
+
+@app.get("/pin/apartment")
+def get_pins_by_apartment_endpoint(user: dict = Depends(authenticate_user)):
+    apartment_id = user.apartment.id
+    pins = db.get_pins_by_apartment(apartment_id)
+    return [
+        {
+            "id": pin.id,
+            "label": pin.label,
+            "created_at": pin.created_at,
+        }
+        for pin in pins
+    ]
 
 
 if __name__ == "__main__":

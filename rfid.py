@@ -1,5 +1,5 @@
 import utils
-import datetime
+import db
 
 try:
     from evdev import InputDevice, categorize, ecodes, list_devices
@@ -8,27 +8,7 @@ try:
 except ImportError:
     evdev_imported = False
 
-RFID_LENGTH = 10  # Adjust this as per your RFID reader's UUID length
-
-
-def save_rfid(apartment_number, rfid, creator_email, label):
-    data = utils.load_data()
-    salt = utils.generate_salt()
-    hashed_rfid = utils.hash_secret(salt=salt, payload=rfid)
-    entry = {
-        "label": label,
-        "hashed_rfid": hashed_rfid,
-        "salt": salt,
-        "creator_email": creator_email,
-        "created_at": datetime.datetime.now().isoformat(),
-    }
-    data["apartments"].setdefault(
-        apartment_number, {"users": [], "rfids": [], "devices": []}
-    )
-    data["apartments"][apartment_number].setdefault("rfids", [])
-    data["apartments"][apartment_number]["rfids"].append(entry)
-    utils.save_data(data)
-    print(f"New RFID for apartment number {apartment_number} stored.")
+RFID_LENGTH = 10  # Adjust this as per your RFID tags UUID length
 
 
 def find_keyboards():
@@ -80,7 +60,7 @@ def read_rfid_from_keyboards():
                                 print("Scan RFID: ", end="", flush=True)
 
 
-def add_rfid(apartment_number, creator_email, label):
+def add_rfid(apartment_number, user_email, label):
     if evdev_imported:
         print(
             "Would you like to enter RFID manually or scan using a connected reader? (m/s): ",
@@ -99,74 +79,63 @@ def add_rfid(apartment_number, creator_email, label):
             print("Invalid choice.")
             return
     else:
+        print("RFID reader not found. Please enter RFID manually.")
         rfid = input("Enter RFID: ").strip()
 
-    save_rfid(apartment_number, rfid, creator_email, label)
+    salt = utils.generate_salt()
+    hashed_rfid = utils.hash_secret(salt=salt, payload=rfid)
 
+    # get creator id from email
+    if user := db.get_user(user_email):
+        user_id = user.id
+    else:
+        print("User not found.")
+        return
 
-def delete_rfid(apartment_number, hashed_rfid):
-    """Delete an existing RFID entry."""
-    data = utils.load_data()
-
-    if apartment_number not in data["apartments"]:
-        print("Apartment number not found.")
-        return False
-    if "rfids" not in data["apartments"][apartment_number]:
-        print("No RFIDs stored for this apartment.")
-        return False
-    new_rfids = [
-        rfid
-        for rfid in data["apartments"][apartment_number]["rfids"]
-        if rfid["hashed_rfid"] != hashed_rfid
-    ]
-    data["apartments"][apartment_number]["rfids"] = new_rfids
-    utils.save_data(data)
-    print("RFID not found.")
-    return False
-
-
-def list_rfids():
-    """List all RFIDs."""
-    data = utils.load_data()
-    for apartment_number, apartment in data["apartments"].items():
-        print(f"Apartment Number: {apartment_number}")
-        if "rfids" not in apartment or not apartment["rfids"]:
-            print("  No RFIDs stored for this apartment.")
-            continue
-        for rfid in apartment.get("rfids", []):
-            print(
-                f"  Hashed RFID: {rfid['hashed_rfid']}, Creator: {rfid['creator_email']}, Label: {rfid['label']}, Created At: {rfid['created_at']}"
-            )
+    db.save_rfid(user_id, hashed_rfid, salt, label)
+    print(f"New RFID for apartment number {apartment_number} stored.")
 
 
 def main():
-    data = utils.load_data()
     while True:
         print("\n1. Create RFID\n2. Delete RFID\n3. List RFIDs\n4. Exit")
         choice = input("Enter your choice: ")
         if choice == "1":
-            apartment_number = input("Enter apartment number (two digits): ")
-            creator_email = input("Enter your email address: ")
+            apartment_number = input("Enter apartment number: ")
+            creator_email = input("Enter owner's email: ")
             label = input("Enter a label for this RFID: ")
             add_rfid(apartment_number, creator_email, label)
         elif choice == "2":
-            apartment_number = input("Enter apartment number (two digits): ")
-            rfids = data["apartments"][apartment_number].get("rfids", [])
+            apartment_number = input("Enter apartment number (empty for all): ")
+            rfids = (
+                db.get_all_rfids()
+                if not apartment_number
+                else [
+                    rfid
+                    for rfid in db.get_all_rfids()
+                    if rfid.apartment.number == apartment_number
+                ]
+            )
             if not rfids:
                 print("No RFIDs stored for this apartment.")
                 continue
             print("Select a RFID to delete:")
             for index, rfid in enumerate(rfids):
                 print(
-                    f"{index + 1}. Created by {rfid['creator_email']} on {rfid['created_at']}"
+                    f"{index + 1}. User: {rfid.user.email}, created at {rfid.created_at}, label: {rfid.label}"
                 )
             choice = int(input("Enter the number of the RFID to delete: ")) - 1
             if 0 <= choice < len(rfids):
-                if delete_rfid(apartment_number, rfids[choice]["hashed_rfid"]):
+                if db.remove_rfid(rfids[choice].id):
                     print("RFID deleted.")
+                else:
+                    print("RFID not found.")
         elif choice == "3":
             print("\n")
-            list_rfids()
+            for rfid in db.get_all_rfids():
+                print(
+                    f"User: {rfid.user.email}, Label: {rfid.label}, Created at: {rfid.created_at}"
+                )
         elif choice == "4":
             print("Exiting...")
             break
