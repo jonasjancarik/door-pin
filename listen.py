@@ -132,7 +132,7 @@ async def handle_keyboard(keyboard):
                                                     salt=rfid["salt"],
                                                     payload=rfid_input,
                                                 )
-                                                == rfid["hashed_rfid"]
+                                                == rfid["hashed_uuid"]
                                             ):
                                                 open_door()
                                                 input_pin = ""

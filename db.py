@@ -76,10 +76,10 @@ class Rfid(Base):
     __tablename__ = "rfids"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    hashed_rfid = Column(String, nullable=False)
+    hashed_uuid = Column(String, nullable=False)
     salt = Column(String, nullable=False)
     label = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
     user = relationship(
         "User", back_populates="rfids", foreign_keys=[user_id], lazy="joined"
     )
@@ -93,7 +93,7 @@ class Pin(Base):
     hashed_pin = Column(String, nullable=False)
     salt = Column(String, nullable=False)
     label = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
     user = relationship("User", back_populates="pins", lazy="joined")
 
 
@@ -242,10 +242,10 @@ def update_user_login_codes(email, login_codes):
         return None
 
 
-def save_rfid(user_id, hashed_rfid, salt, label):
+def save_rfid(user_id, hashed_uuid, salt, label):
     with get_db() as db:
         new_rfid = Rfid(
-            user_id=user_id, hashed_rfid=hashed_rfid, salt=salt, label=label
+            user_id=user_id, hashed_uuid=hashed_uuid, salt=salt, label=label
         )
         db.add(new_rfid)
         db.commit()

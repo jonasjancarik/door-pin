@@ -55,8 +55,7 @@ class AuthResponse(BaseModel):
 
 
 class RFIDRequest(BaseModel):
-    apartment_number: str
-    rfid: str
+    uuid: str
     label: str
 
 
@@ -213,18 +212,12 @@ def create_user(new_user: dict, user: dict = Depends(authenticate_user)):
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-@app.post("/rfid/register")
+@app.post("/rfid/create")
 def register_rfid(rfid_request: RFIDRequest, user: dict = Depends(authenticate_user)):
     salt = utils.generate_salt()
-    hashed_rfid = utils.hash_secret(salt=salt, payload=rfid_request.rfid)
-    db.save_rfid(
-        user.id,
-        hashed_rfid,
-        salt,
-        rfid_request.label,
-        user["email"],
-    )
-    return {"status": "RFID registered"}
+    hashed_uuid = utils.hash_secret(salt=salt, payload=rfid_request.uuid)
+    db.save_rfid(user.id, hashed_uuid, salt, rfid_request.label)
+    return {"status": "RFID created"}
 
 
 @app.get("/rfid/read")
@@ -237,9 +230,9 @@ def read_rfid(timeout: int, user: dict = Depends(authenticate_user)):
 
 @app.delete("/rfid/delete")
 def delete_rfid_endpoint(
-    user_id: int, hashed_rfid: str, user: dict = Depends(authenticate_user)
+    user_id: int, hashed_uuid: str, user: dict = Depends(authenticate_user)
 ):
-    if db.delete_rfid(user_id, hashed_rfid):
+    if db.delete_rfid(user_id, hashed_uuid):
         return {"status": "RFID deleted"}
     raise HTTPException(status_code=404, detail="RFID not found")
 
@@ -250,7 +243,7 @@ def list_rfids_endpoint():
     return [
         {
             "user_id": rfid.user_id,
-            "hashed_rfid": rfid.hashed_rfid,
+            "hashed_uuid": rfid.hashed_uuid,
             "label": rfid.label,
             "creator_email": rfid.creator_email,
             "created_at": rfid.created_at,
