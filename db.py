@@ -79,7 +79,9 @@ class Rfid(Base):
     hashed_uuid = Column(String, nullable=False)
     salt = Column(String, nullable=False)
     label = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
+    created_at = Column(
+        DateTime, default=datetime.datetime.utcnow
+    )  # utcnow is deprecated in newer versions, but this will be likely run on an older version of python
     user = relationship(
         "User", back_populates="rfids", foreign_keys=[user_id], lazy="joined"
     )
@@ -93,7 +95,7 @@ class Pin(Base):
     hashed_pin = Column(String, nullable=False)
     salt = Column(String, nullable=False)
     label = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
     user = relationship("User", back_populates="pins", lazy="joined")
 
 
