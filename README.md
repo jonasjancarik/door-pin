@@ -16,6 +16,60 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Additionally, on Raspberry PI, install `RPi.GPIO` and `evdev` with:
+
+```bash
+pip install RPi.GPIO
+pip install evdev
+```
+
+For development, create an RPi GPIO mock:
+
+```bash
+mkdir RPi
+touch RPI/__init__.py
+touch RPi/GPIO.py
+```
+
+and add the following code to `RPi/GPIO.py`:
+
+```python
+def setmode(a):
+    print(a)
+
+
+def setup(a, b):
+    print(a)
+
+
+def output(a, b):
+    print(a)
+
+
+def cleanup():
+    print("a")
+
+
+def setwarnings(flag):
+    print("False")
+
+
+def LOW():
+    print("LOW")
+
+
+def HIGH():
+    print("HIGH")
+
+
+def BCM():
+    print("BCM")
+
+
+def OUT():
+    print("OUT")
+```
+
 ## Networking
 
 Because this will be running on a Raspberry PI - likely without a static public IP address or port forwarding, use another server as a proxy to forward requests to the Raspberry PI.
