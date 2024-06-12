@@ -9,7 +9,6 @@ import os
 load_dotenv()
 
 args = argparse.ArgumentParser()
-args.add_argument("--debug", action="store_true", help="Enable debug mode")
 args.add_argument("--timeout", type=int, default=10, help="Input timeout in seconds")
 args.add_argument("--pin-length", type=int, default=4, help="PIN length")
 args.add_argument(
@@ -26,7 +25,7 @@ else:
 
 
 logging.basicConfig(
-    level=logging.DEBUG if args.debug else logging.INFO,
+    level=os.getenv("LOG_LEVEL", logging.INFO),
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 

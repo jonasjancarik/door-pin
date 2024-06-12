@@ -14,9 +14,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from contextlib import contextmanager
 import utils
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", logging.INFO))
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data.db")

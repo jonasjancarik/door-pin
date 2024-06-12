@@ -20,7 +20,7 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    level=os.getenv("LOG_LEVEL", logging.INFO),
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
@@ -104,7 +104,8 @@ def send_magic_link_endpoint(request: LoginRequest):
             },
             Source=sender,
         )
-        print(f"Email sent! {response}")
+        logging.info(f"Email sent: {response}")
+        logging.debug(f"Login code: {login_code}")
         return success_message
     except ClientError as e:
         logging.error(f"Failed to send email: {e}")
