@@ -12,7 +12,8 @@ try:
     RELAY_PIN = int(os.getenv("RELAY_PIN", 18))
 except ValueError:
     os.exit("RELAY_PIN must be an integer")
-RELAY_ACTIVATION_TIME = 0.5  # seconds
+
+RELAY_ACTIVATION_TIME = os.getenv("RELAY_ACTIVATION_TIME", 5)  # seconds
 
 if os.getenv("RELAY_ACTIVE_STATE", "HIGH") not in {"HIGH", "LOW"}:
     raise ValueError("RELAY_ACTIVE_STATE must be either HIGH or LOW")
@@ -28,11 +29,11 @@ GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)  # deactivate first
 GPIO.cleanup()  # cleanup to avoid issues with previous runs
 
 
-def unlock_door():
+def unlock_door(duration=RELAY_ACTIVATION_TIME):
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(RELAY_PIN, GPIO.OUT)
     GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
-    time.sleep(RELAY_ACTIVATION_TIME)
+    time.sleep(duration)
     GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
     GPIO.cleanup()
 
