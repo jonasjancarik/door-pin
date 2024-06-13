@@ -1,6 +1,8 @@
 # door-pin
 
-Simple door lock system with PIN codes (entered using a USB numeric keyboard) and remote unlocking, using Raspberry PI.
+Simple door lock system with PIN codes, RFID tags and remote unlocking using Raspberry PI.
+
+You can find the client web app under [door-control-web-app](https://github.com/jonasjancarik/door-control-web-app).
 
 ## Hardware
 
@@ -16,14 +18,11 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Additionally, on Raspberry PI, install `RPi.GPIO` and `evdev` with:
+### Development
 
-```bash
-pip install RPi.GPIO
-pip install evdev
-```
+For development on a machine which doesn't support `RPi.GPIO` and `evdev`, run `grep -vE '^(RPi\.GPIO|evdev)' requirements.txt | pip install -r /dev/stdin` instead of the usual `pip install -r requirements.txt` to exclude these packages.
 
-For development, create an RPi GPIO mock:
+Then create a `RPi` package with a dummy `GPIO` module to avoid errors:
 
 ```bash
 mkdir RPi
@@ -82,14 +81,17 @@ ssh -R 8000:localhost:8000 <server>
 
 ## Usage
 
-### User management
+### First-time setup
 
-Scripts:
+Run `python setup.py` to create the database and set up the first user. You can also use a CSV file with usernames and PIN codes to create multiple users at once - use the `users.csv.example` as a template.
+
+### API and local listener
+
+Launch the API server with `uvicorn api:app --reload` and the local PIN/RFID listener script with `python listen.py`.
+
+### Management using the command-line interface
+
+Use:
+
 - `pin.py` for managing PIN codes
-- `tokens.py` for managing tokens (URL credentials for remote unlocking)
-
-### Remote unlocking
-
-Run the API server with `uvicorn api:app --reload` for remote unlocking.
-
-Users that have a token can unlock the door by visiting the URL `http://<server>:8000/door/unlock?username=<username>&token=<token>`.
+- `rfid.py` for managing RFID keytags or cards
