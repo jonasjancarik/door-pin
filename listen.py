@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from evdev import InputDevice, categorize, ecodes, list_devices
+from evdev import InputDevice, categorize, ecodes, list_devices  # type: ignore
 import utils
 import argparse
 from dotenv import load_dotenv
