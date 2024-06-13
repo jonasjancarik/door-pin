@@ -13,7 +13,7 @@ try:
 except ValueError:
     os.exit("RELAY_PIN must be an integer")
 
-RELAY_ACTIVATION_TIME = os.getenv("RELAY_ACTIVATION_TIME", 5)  # seconds
+RELAY_ACTIVATION_TIME = int(os.getenv("RELAY_ACTIVATION_TIME", 5))  # seconds
 
 if os.getenv("RELAY_ACTIVE_STATE", "HIGH") not in {"HIGH", "LOW"}:
     raise ValueError("RELAY_ACTIVE_STATE must be either HIGH or LOW")
