@@ -403,3 +403,8 @@ def get_pins_by_user(user_id):
 def get_pins_by_apartment(apartment_id):
     with get_db() as db:
         return db.query(Pin).join(User).filter(User.apartment_id == apartment_id).all()
+
+
+def get_all_pins():
+    with get_db() as db:
+        return db.query(Pin).all()

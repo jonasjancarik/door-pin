@@ -5,6 +5,7 @@ import utils
 import argparse
 from dotenv import load_dotenv
 import os
+import db  # Importing the db module
 
 load_dotenv()
 
@@ -16,13 +17,13 @@ args.add_argument(
     type=int,
     help="RFID length (overrides RFID_LENGTH env var). Defaults to 10 even without the env var.",
 )
+args.add_argument("--debug", action="store_true", help="Enable debug output")
 args = args.parse_args()
 
 if args.rfid_length:
     RFID_LENGTH = args.rfid_length
 else:
-    RFID_LENGTH = os.getenv("RFID_LENGTH", 10)
-
+    RFID_LENGTH = int(os.getenv("RFID_LENGTH", 10))
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", logging.INFO),
@@ -94,62 +95,47 @@ async def handle_keyboard(keyboard):
                             if len(input_pin) >= args.pin_length:
                                 pin = input_pin[-args.pin_length :]
 
-                                data = utils.load_data()
-
-                                for apartment_number in data["apartments"]:
-                                    if "pins" in data["apartments"][apartment_number]:
-                                        for pin_entry in data["apartments"][
-                                            apartment_number
-                                        ]["pins"]:
-                                            salt = pin_entry["salt"]
-                                            if (
-                                                utils.hash_secret(
-                                                    salt=salt, payload=pin
-                                                )
-                                                == pin_entry["hashed_pin"]
-                                            ):
-                                                open_door()
-                                                input_pin = ""
-                                                print(
-                                                    "Enter PIN or scan RFID: ",
-                                                    end="",
-                                                    flush=True,
-                                                )
+                                pin_entries = db.get_all_pins()
+                                for pin_entry in pin_entries:
+                                    if (
+                                        utils.hash_secret(
+                                            salt=pin_entry.salt, payload=pin
+                                        )
+                                        == pin_entry.hashed_pin
+                                    ):
+                                        open_door()
+                                        input_pin = ""
+                                        print(
+                                            "Enter PIN or scan RFID: ",
+                                            end="",
+                                            flush=True,
+                                        )
 
                             # Check if RFID is valid
                             if len(input_pin) >= RFID_LENGTH:
                                 rfid_input = input_pin[-RFID_LENGTH:]
 
-                                data = utils.load_data()
-                                for apartment_number in data["apartments"]:
-                                    if "rfids" in data["apartments"][apartment_number]:
-                                        for rfid in data["apartments"][
-                                            apartment_number
-                                        ]["rfids"]:
-                                            if (
-                                                utils.hash_secret(
-                                                    salt=rfid["salt"],
-                                                    payload=rfid_input,
-                                                )
-                                                == rfid["hashed_uuid"]
-                                            ):
-                                                open_door()
-                                                input_pin = ""
-                                                print(
-                                                    "Enter PIN or scan RFID: ",
-                                                    end="",
-                                                    flush=True,
-                                                )
+                                rfid_entries = db.get_all_rfids()
+                                for rfid in rfid_entries:
+                                    if (
+                                        utils.hash_secret(
+                                            salt=rfid.salt, payload=rfid_input
+                                        )
+                                        == rfid.hashed_uuid
+                                    ):
+                                        open_door()
+                                        input_pin = ""
+                                        print(
+                                            "Enter PIN or scan RFID: ",
+                                            end="",
+                                            flush=True,
+                                        )
                         else:
                             logging.info(
                                 "Something else than a number or a letter was pressed. Input reset."
                             )
                             input_pin = ""
-                            print(
-                                "\nEnter PIN or scan RFID: ",
-                                end="",
-                                flush=True,
-                            )
+                            print("\nEnter PIN or scan RFID: ", end="", flush=True)
     except Exception as e:
         logging.error(f"Error handling keyboard {keyboard.path}: {e}")
 
