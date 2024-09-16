@@ -247,10 +247,19 @@ def register_rfid(
 
 @app.get("/rfid/read")
 def read_rfid(timeout: int, user: dict = Depends(authenticate_user)):
-    rfid_uuid = rfid.read_rfid_from_keyboards(timeout=timeout if timeout <= 30 else 30)
-    if not rfid_uuid:
-        raise HTTPException(status_code=404, detail="RFID not found")
-    return {"uuid": rfid_uuid}
+    logging.info(f"Attempting to read RFID with timeout: {timeout}")
+    try:
+        rfid_uuid = rfid.read_rfid_from_keyboards(
+            timeout=timeout if timeout <= 30 else 30
+        )
+        if not rfid_uuid:
+            logging.warning("RFID not found within the timeout period")
+            raise HTTPException(status_code=404, detail="RFID not found")
+        logging.info(f"Successfully read RFID: {rfid_uuid}")
+        return {"uuid": rfid_uuid}
+    except Exception as e:
+        logging.error(f"Error reading RFID: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error reading RFID: {str(e)}")
 
 
 @app.delete("/rfid/delete")
