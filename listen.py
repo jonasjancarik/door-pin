@@ -1,185 +1,153 @@
 import asyncio
 import logging
+from evdev import InputDevice, categorize, ecodes, list_devices  # type: ignore
 import utils
 import argparse
 from dotenv import load_dotenv
 import os
-import db
-from collections import deque
-import getpass
-
-# Try to import evdev, but don't fail if it's not available
-try:
-    from evdev import InputDevice, categorize, ecodes, list_devices
-
-    EVDEV_AVAILABLE = True
-except ImportError:
-    EVDEV_AVAILABLE = False
+import db  # Importing the db module
 
 load_dotenv()
 
-KEY_CODES = {
-    "0225": "1",
-    "0210": "2",
-    "0195": "3",
-    "0180": "4",
-    "0165": "5",
-    "0150": "6",
-    "0135": "7",
-    "0120": "8",
-    "0105": "9",
-    "0240": "0",
-    "0090": "*",
-    "0075": "#",
-}
+args = argparse.ArgumentParser()
+args.add_argument("--timeout", type=int, default=10, help="Input timeout in seconds")
+args.add_argument("--pin-length", type=int, default=4, help="PIN length")
+args.add_argument(
+    "--rfid-length",
+    type=int,
+    help="RFID length (overrides RFID_LENGTH env var). Defaults to 10 even without the env var.",
+)
+args.add_argument("--debug", action="store_true", help="Enable debug output")
+args = args.parse_args()
 
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--timeout", type=int, default=10, help="Input timeout in seconds"
-    )
-    parser.add_argument("--pin-length", type=int, default=4, help="PIN length")
-    parser.add_argument(
-        "--rfid-length", type=int, help="RFID length (overrides RFID_LENGTH env var)"
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default=os.getenv("LOG_LEVEL", "INFO"),
-        help="Set the logging level (default: INFO)",
-    )
-    parser.add_argument(
-        "--input-mode",
-        choices=["standard", "special"],
-        help="Input mode: 'standard' for regular input, 'special' for key code input",
-    )
-    return parser.parse_args()
-
-
-args = parse_args()
-RFID_LENGTH = args.rfid_length or int(os.getenv("RFID_LENGTH", 10))
-INPUT_MODE = args.input_mode or os.getenv("INPUT_MODE", "standard")
+if args.rfid_length:
+    RFID_LENGTH = args.rfid_length
+else:
+    RFID_LENGTH = int(os.getenv("RFID_LENGTH", 10))
 
 logging.basicConfig(
-    level=getattr(logging, args.log_level),
+    level=os.getenv("LOG_LEVEL", logging.INFO),
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
 
 def open_door():
+    """Activate the relay to open the door."""
     logging.info("PIN or RFID correct! Activating relay.")
     utils.unlock_door()
     logging.info("Relay deactivated.")
 
 
-def check_input(input_pin):
-    if len(input_pin) == args.pin_length:
-        if any(
-            utils.hash_secret(salt=entry.salt, payload=input_pin) == entry.hashed_pin
-            for entry in db.get_all_pins()
-        ):
-            return True
-
-    if len(input_pin) == RFID_LENGTH:
-        if any(
-            utils.hash_secret(salt=entry.salt, payload=input_pin) == entry.hashed_uuid
-            for entry in db.get_all_rfids()
-        ):
-            return True
-
-    return False
+def find_keyboards():
+    """Find and return a list of keyboard devices."""
+    devices = [InputDevice(path) for path in list_devices()]
+    keyboards = [
+        device
+        for device in devices
+        if "keyboard" in device.name.lower() or "event" in device.path
+    ]
+    return keyboards
 
 
-async def handle_input(get_key, device_info=""):
-    pin_buffer = deque(maxlen=args.pin_length)
+async def handle_keyboard(keyboard):
+    input_pin = ""
     last_input_time = asyncio.get_event_loop().time()
-    if device_info:
-        logging.info(f"Using input device: {device_info}")
+    logging.info(f"Using keyboard: {keyboard.name} at {keyboard.path}")
     print("Enter PIN or scan RFID: ", end="", flush=True)
 
-    while True:
-        current_time = asyncio.get_event_loop().time()
-        if current_time - last_input_time > args.timeout:
-            pin_buffer.clear()
-            logging.info("Input reset due to timeout.")
-            print("\nEnter PIN or scan RFID: ", end="", flush=True)
+    try:
+        async for event in keyboard.async_read_loop():
+            current_time = asyncio.get_event_loop().time()
+            if current_time - last_input_time > args.timeout:
+                input_pin = ""
+                logging.info("Input reset due to timeout.")
+                print("\nEnter PIN or scan RFID: ", end="", flush=True)
 
-        key = await get_key()
-        last_input_time = asyncio.get_event_loop().time()
+            last_input_time = current_time
 
-        if INPUT_MODE == "special":
-            if key.strip():  # Ignore empty lines
-                if len(key) > 4:  # RFID card input
-                    input_pin = key.strip()
-                    if check_input(input_pin):
-                        open_door()
-                    pin_buffer.clear()
-                else:  # PIN input
-                    digit = KEY_CODES.get(key.strip())
-                    if digit:
-                        pin_buffer.append(digit)
-                        input_pin = "".join(pin_buffer)
-                        if len(pin_buffer) == args.pin_length and check_input(
-                            input_pin
-                        ):
-                            open_door()
-                            pin_buffer.clear()
-        else:  # standard mode
-            if key.isalnum():
-                pin_buffer.append(key)
-                input_pin = "".join(pin_buffer)
-                if len(input_pin) >= args.pin_length and check_input(input_pin):
-                    open_door()
-                    pin_buffer.clear()
+            if event.type == ecodes.EV_KEY:
+                data = categorize(event)
+                if data.keystate == 1:  # Key down events only
+                    if isinstance(data.keycode, list):
+                        key_code = data.keycode[0]
+                    else:
+                        key_code = data.keycode
 
-        logging.debug(f"Current input: {''.join(pin_buffer)}")
+                    if "KEY_" in key_code:
+                        key = key_code.split("_")[1].replace("KP", "")
+                        # check if key is an alphanumeric character
+                        if key.isdigit() or key.isalpha():
+                            input_pin += key
+                            if args.debug:
+                                print(
+                                    f"\rEnter PIN or scan RFID: {input_pin}",
+                                    end="",
+                                    flush=True,
+                                )
+                            else:
+                                print(
+                                    f"\rEnter PIN or scan RFID: {'*' * len(input_pin)}",
+                                    end="",
+                                    flush=True,
+                                )
 
-        if len(pin_buffer) == 0:
-            print("\nEnter PIN or scan RFID: ", end="", flush=True)
+                            # Check if PIN is valid
+                            if len(input_pin) >= args.pin_length:
+                                pin = input_pin[-args.pin_length :]
 
+                                pin_entries = db.get_all_pins()
+                                for pin_entry in pin_entries:
+                                    if (
+                                        utils.hash_secret(
+                                            salt=pin_entry.salt, payload=pin
+                                        )
+                                        == pin_entry.hashed_pin
+                                    ):
+                                        open_door()
+                                        input_pin = ""
+                                        print(
+                                            "Enter PIN or scan RFID: ",
+                                            end="",
+                                            flush=True,
+                                        )
 
-async def get_standard_input():
-    return await asyncio.get_event_loop().run_in_executor(None, getpass.getpass, "")
+                            # Check if RFID is valid
+                            if len(input_pin) >= RFID_LENGTH:
+                                rfid_input = input_pin[-RFID_LENGTH:]
 
-
-async def get_evdev_input(device):
-    async for event in device.async_read_loop():
-        if event.type == ecodes.EV_KEY and categorize(event).keystate == 1:
-            key_code = categorize(event).keycode
-            key = (
-                key_code.split("_")[1].replace("KP", "")
-                if isinstance(key_code, str)
-                else key_code[0].split("_")[1].replace("KP", "")
-            )
-            return key
-    return ""
+                                rfid_entries = db.get_all_rfids()
+                                for rfid in rfid_entries:
+                                    if (
+                                        utils.hash_secret(
+                                            salt=rfid.salt, payload=rfid_input
+                                        )
+                                        == rfid.hashed_uuid
+                                    ):
+                                        open_door()
+                                        input_pin = ""
+                                        print(
+                                            "Enter PIN or scan RFID: ",
+                                            end="",
+                                            flush=True,
+                                        )
+                        else:
+                            logging.info(
+                                "Something else than a number or a letter was pressed. Input reset."
+                            )
+                            input_pin = ""
+                            print("\nEnter PIN or scan RFID: ", end="", flush=True)
+    except Exception as e:
+        logging.error(f"Error handling keyboard {keyboard.path}: {e}")
 
 
 async def main():
-    if EVDEV_AVAILABLE:
-        keyboards = [
-            device
-            for device in map(InputDevice, list_devices())
-            if "keyboard" in device.name.lower() or "event" in device.path
-        ]
+    keyboards = find_keyboards()
+    if not keyboards:
+        logging.error("No keyboards found.")
+        return
 
-        if keyboards:
-            await asyncio.gather(
-                *(
-                    handle_input(
-                        lambda d=dev: get_evdev_input(d), f"{dev.name} at {dev.path}"
-                    )
-                    for dev in keyboards
-                )
-            )
-            return
-
-        logging.warning("No evdev keyboards found. Falling back to standard input.")
-    else:
-        logging.info("Evdev not available. Using standard input for keyboard handling.")
-
-    await handle_input(get_standard_input)
+    tasks = [asyncio.create_task(handle_keyboard(keyboard)) for keyboard in keyboards]
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
