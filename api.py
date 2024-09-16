@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import db
 import rfid
+from typing import Optional
 
 load_dotenv()
 
@@ -57,6 +58,7 @@ class AuthResponse(BaseModel):
 class RFIDRequest(BaseModel):
     uuid: str
     label: str
+    user_email: Optional[EmailStr] = None
 
 
 class PinRequest(BaseModel):
@@ -177,6 +179,7 @@ def exchange_code(login_code: LoginCode):
                 "apartment_number": user.apartment.number,
                 "email": user.email,
                 "name": user.name,
+                "admin": user.admin,
             },
         }
 
@@ -214,11 +217,32 @@ def create_user(new_user: dict, user: dict = Depends(authenticate_user)):
 
 
 @app.post("/rfid/create")
-def register_rfid(rfid_request: RFIDRequest, user: dict = Depends(authenticate_user)):
+def register_rfid(
+    rfid_request: RFIDRequest, current_user: dict = Depends(authenticate_user)
+):
     salt = utils.generate_salt()
     hashed_uuid = utils.hash_secret(salt=salt, payload=rfid_request.uuid)
-    db.save_rfid(user.id, hashed_uuid, salt, rfid_request.label)
-    return {"status": "RFID created"}
+
+    # If user_email is provided, check if the current user is an admin
+    if rfid_request.user_email:
+        if not current_user.get("admin", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Only admin users can register RFIDs for other users",
+            )
+
+        target_user = db.get_user(rfid_request.user_email)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_id = target_user.id
+    else:
+        user_id = current_user["id"]
+
+    db.save_rfid(user_id, hashed_uuid, salt, rfid_request.label)
+    return {
+        "status": "RFID created",
+        "user_email": rfid_request.user_email or current_user["email"],
+    }
 
 
 @app.get("/rfid/read")
