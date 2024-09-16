@@ -114,15 +114,14 @@ def send_magic_link_endpoint(request: LoginRequest):
         raise HTTPException(status_code=500, detail="Failed to send email.")
 
 
-def authenticate_user(web_app_token: str = Depends(oauth2_scheme)):
+def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
     if user := db.get_user_by_token(web_app_token):
         return user
-
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @app.post("/authenticate")
-def authenticate(user: dict = Depends(authenticate_user)):
+def authenticate(user: db.User = Depends(authenticate_user)):
     return {"status": "authenticated", "user": user}
 
 
@@ -135,10 +134,10 @@ def get_current_token(request: Request) -> str:
 
 @app.post("/logout")
 def logout(
-    user: dict = Depends(authenticate_user),
+    user: db.User = Depends(authenticate_user),
     current_token: str = Depends(get_current_token),
 ):
-    email = user["email"]
+    email = user.email
     user = db.get_user(email)
     if user:
         tokens = user.tokens if user.tokens else []
@@ -187,24 +186,24 @@ def exchange_code(login_code: LoginCode):
 
 
 @app.post("/unlock")
-def unlock(_: dict = Depends(authenticate_user)):
+def unlock(_: db.User = Depends(authenticate_user)):
     utils.unlock_door()
     return {"message": "Door unlocked successfully"}
 
 
 @app.post("/user/create")
-def create_user(new_user: dict, user: dict = Depends(authenticate_user)):
+def create_user(new_user: dict, user: db.User = Depends(authenticate_user)):
     apartment_id = user.apartment.id
     users = db.get_apartment_users(apartment_id)
     for user_data in users:
-        if user_data.email == user["email"]:
+        if user_data.email == user.email:
             if not user_data.guest:
                 for existing_user in users:
                     if existing_user.email == new_user["email"]:
                         raise HTTPException(
                             status_code=409, detail="User already exists"
                         )
-                new_user["creator_id"] = user["id"]
+                new_user["creator_id"] = user.id
                 new_user["apartment_id"] = apartment_id
                 db.save_user(new_user)
                 return {"status": "user created"}
@@ -218,14 +217,14 @@ def create_user(new_user: dict, user: dict = Depends(authenticate_user)):
 
 @app.post("/rfid/create")
 def register_rfid(
-    rfid_request: RFIDRequest, current_user: dict = Depends(authenticate_user)
+    rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
 ):
     salt = utils.generate_salt()
     hashed_uuid = utils.hash_secret(salt=salt, payload=rfid_request.uuid)
 
     # If user_email is provided, check if the current user is an admin
     if rfid_request.user_email:
-        if not current_user.get("admin", False):
+        if not current_user.admin:
             raise HTTPException(
                 status_code=403,
                 detail="Only admin users can register RFIDs for other users",
@@ -236,17 +235,17 @@ def register_rfid(
             raise HTTPException(status_code=404, detail="User not found")
         user_id = target_user.id
     else:
-        user_id = current_user["id"]
+        user_id = current_user.id
 
     db.save_rfid(user_id, hashed_uuid, salt, rfid_request.label)
     return {
         "status": "RFID created",
-        "user_email": rfid_request.user_email or current_user["email"],
+        "user_email": rfid_request.user_email or current_user.email,
     }
 
 
 @app.get("/rfid/read")
-def read_rfid(timeout: int, user: dict = Depends(authenticate_user)):
+def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
         rfid_uuid = rfid.read_rfid_from_keyboards(
@@ -264,7 +263,7 @@ def read_rfid(timeout: int, user: dict = Depends(authenticate_user)):
 
 @app.delete("/rfid/delete")
 def delete_rfid_endpoint(
-    user_id: int, hashed_uuid: str, user: dict = Depends(authenticate_user)
+    user_id: int, hashed_uuid: str, user: db.User = Depends(authenticate_user)
 ):
     if db.delete_rfid(user_id, hashed_uuid):
         return {"status": "RFID deleted"}
@@ -288,18 +287,18 @@ def list_rfids_endpoint():
 
 @app.post("/pin/create")
 def create_pin_endpoint(
-    pin_request: PinRequest, user: dict = Depends(authenticate_user)
+    pin_request: PinRequest, user: db.User = Depends(authenticate_user)
 ):
     salt = utils.generate_salt()
     hashed_pin = utils.hash_secret(salt=salt, payload=pin_request.pin)
-    user_id = db.get_user(user["email"]).id
+    user_id = db.get_user(user.email).id
     pin = db.save_pin(user_id, hashed_pin, salt, pin_request.label)
     return {"status": "PIN saved", "pin_id": pin.id}
 
 
 @app.post("/pin/update/{pin_id}")
 def update_pin_endpoint(
-    pin_id: int, pin_request: PinRequest, user: dict = Depends(authenticate_user)
+    pin_id: int, pin_request: PinRequest, user: db.User = Depends(authenticate_user)
 ):
     salt = utils.generate_salt()
     hashed_pin = utils.hash_secret(salt=salt, payload=pin_request.pin)
@@ -310,8 +309,8 @@ def update_pin_endpoint(
 
 
 @app.get("/pin/user")
-def get_pins_by_user_endpoint(user: dict = Depends(authenticate_user)):
-    user_id = db.get_user(user["email"]).id
+def get_pins_by_user_endpoint(user: db.User = Depends(authenticate_user)):
+    user_id = db.get_user(user.email).id
     pins = db.get_pins_by_user(user_id)
     return [
         {
@@ -324,7 +323,7 @@ def get_pins_by_user_endpoint(user: dict = Depends(authenticate_user)):
 
 
 @app.get("/pin/apartment")
-def get_pins_by_apartment_endpoint(user: dict = Depends(authenticate_user)):
+def get_pins_by_apartment_endpoint(user: db.User = Depends(authenticate_user)):
     apartment_id = user.apartment.id
     pins = db.get_pins_by_apartment(apartment_id)
     return [
