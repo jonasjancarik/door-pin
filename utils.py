@@ -3,6 +3,7 @@ import time
 import hashlib
 from dotenv import load_dotenv
 import os
+import sys
 
 load_dotenv()
 
@@ -22,10 +23,17 @@ RELAY_ACTIVE_STATE = (
 )
 
 # GPIO setup
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(RELAY_PIN, GPIO.OUT)
-GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)  # deactivate first
-GPIO.cleanup()  # cleanup to avoid issues with previous runs
+try:
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(RELAY_PIN, GPIO.OUT)
+    GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)  # deactivate first
+    GPIO.cleanup()  # cleanup to avoid issues with previous runs
+except Exception as e:
+    print(f"Error setting up GPIO: {e}")
+    if "Cannot determine SOC peripheral base address" in str(e):
+        sys.exit(
+            "rpi-gpio is not supported on this hardware. If you are on a Raspberry PI 5, run pip uninstall rpi-gpio; pip install rpi-lgpio"
+        )
 
 
 def unlock_door(duration=RELAY_ACTIVATION_TIME):
