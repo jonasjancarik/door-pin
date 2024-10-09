@@ -175,10 +175,23 @@ def handle_special_input(key, pin_queue):
 def handle_standard_input(key, pin_buffer):
     if key and (key.isdigit() or key.isalpha()):
         pin_buffer.append(key)
-        input_pin = "".join(pin_buffer)
-        if len(input_pin) >= args.pin_length and check_input(input_pin):
-            open_door()
+        input_value = "".join(pin_buffer)
+
+        if len(input_value) == args.pin_length:
+            if check_pin(input_value):
+                open_door()
             pin_buffer.clear()
+            print("\nEnter PIN or scan RFID: ", end="", flush=True)
+        elif len(input_value) > args.pin_length:
+            if check_rfid(input_value):
+                open_door()
+            pin_buffer.clear()
+            print("\nEnter PIN or scan RFID: ", end="", flush=True)
+        else:
+            logging.debug(f"Input sequence too short: {input_value}")
+
+    logging.debug(f"Current input buffer: {pin_buffer}")
+    logging.debug(f"Current PIN queue: {''.join(pin_buffer)}")
 
 
 def check_pin(input_value):
