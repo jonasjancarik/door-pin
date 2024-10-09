@@ -4,8 +4,8 @@ import utils
 import argparse
 from dotenv import load_dotenv
 import os
-import db
 from collections import deque
+import db
 
 # Try to import evdev, but don't fail if it's not available
 try:
@@ -82,6 +82,9 @@ def find_keyboards():
     return keyboards
 
 
+input_buffer = deque(maxlen=10)
+
+
 async def handle_keyboard(keyboard):
     pin_buffer = deque(maxlen=args.pin_length)
     last_input_time = asyncio.get_event_loop().time()
@@ -125,15 +128,48 @@ def process_key(keycode):
     return None
 
 
-def handle_special_input(key, pin_buffer):
-    if key:
-        digit = KEY_CODES.get(key.zfill(4))
-        if digit:
-            pin_buffer.append(digit)
-            input_pin = "".join(pin_buffer)
-            if len(pin_buffer) == args.pin_length and check_input(input_pin):
+def decode_keypad_input(input_sequence):
+    for code, value in KEY_CODES.items():
+        if input_sequence == code:
+            return value
+    return ""
+
+
+def handle_special_input(key, pin_queue):
+    # add key to input_buffer
+    input_buffer.append(key)
+
+    if input_buffer and input_buffer[-1] == "ENTER":
+        input_buffer.pop()  # remove ENTER from input_buffer
+        input_sequence = "".join(input_buffer)
+
+        decoded_key = decode_keypad_input(input_sequence)
+
+        if decoded_key:
+            pin_queue.append(decoded_key)
+            logging.debug(
+                f"Decoded key: {decoded_key}, Current PIN queue: {''.join(pin_queue)}"
+            )
+
+        if len(pin_queue) == args.pin_length:
+            pin = "".join(pin_queue)
+            if check_pin(pin):
                 open_door()
-                pin_buffer.clear()
+            pin_queue.clear()
+            print("\nEnter PIN or scan RFID: ", end="", flush=True)
+        elif len(input_sequence) > args.pin_length:
+            # if we get here, we have a RFID input most likely. Different RFID tags may have different lengths, so better not check the exact length, just make sure the PIN length is shorter.
+            if check_rfid(input_sequence):
+                open_door()
+            pin_queue.clear()
+            print("\nEnter PIN or scan RFID: ", end="", flush=True)
+        else:
+            logging.debug(f"Input sequence too short: {input_sequence}")
+
+        input_buffer.clear()  # clear input_buffer, ready for next input
+
+    logging.debug(f"Current input buffer: {input_buffer}")
+    logging.debug(f"Current PIN queue: {''.join(pin_queue)}")
 
 
 def handle_standard_input(key, pin_buffer):
@@ -143,6 +179,22 @@ def handle_standard_input(key, pin_buffer):
         if len(input_pin) >= args.pin_length and check_input(input_pin):
             open_door()
             pin_buffer.clear()
+
+
+def check_pin(input_value):
+    all_pins = db.get_all_pins()
+    for pin in all_pins:
+        if utils.verify_pin(input_value, pin.hashed_pin, pin.salt):
+            return True
+    return False
+
+
+def check_rfid(input_value):
+    all_rfids = db.get_all_rfids()
+    for rfid in all_rfids:
+        if utils.verify_rfid(input_value, rfid.hashed_rfid, rfid.salt):
+            return True
+    return False
 
 
 async def main():
