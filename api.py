@@ -71,8 +71,8 @@ def on_startup():
     db.init_db()
 
 
-@app.post("/send-magic-link")
-def send_magic_link_endpoint(request: LoginRequest):
+@app.post("/auth/send-magic-link")
+def send_magic_link(request: LoginRequest):
     success_message = (
         "A login code has been sent to your email. Please enter the code below."
     )
@@ -120,8 +120,8 @@ def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-@app.post("/authenticate")
-def authenticate(user: db.User = Depends(authenticate_user)):
+@app.post("/auth/verify")
+def verify_authentication(user: db.User = Depends(authenticate_user)):
     return {"status": "authenticated", "user": user}
 
 
@@ -132,7 +132,7 @@ def get_current_token(request: Request) -> str:
     return authorization.replace("Bearer ", "")
 
 
-@app.post("/logout")
+@app.post("/auth/logout")
 def logout(
     user: db.User = Depends(authenticate_user),
     current_token: str = Depends(get_current_token),
@@ -155,7 +155,7 @@ class LoginCode(BaseModel):
     login_code: str
 
 
-@app.post("/exchange-code", response_model=AuthResponse)
+@app.post("/auth/exchange-code", response_model=AuthResponse)
 def exchange_code(login_code: LoginCode):
     if not login_code.login_code:
         raise HTTPException(status_code=400, detail="Invalid login code")
@@ -185,13 +185,13 @@ def exchange_code(login_code: LoginCode):
     raise HTTPException(status_code=401, detail="Invalid or expired login code")
 
 
-@app.post("/unlock")
-def unlock(_: db.User = Depends(authenticate_user)):
+@app.post("/door/unlock")
+def unlock_door(_: db.User = Depends(authenticate_user)):
     utils.unlock_door()
     return {"message": "Door unlocked successfully"}
 
 
-@app.post("/user/create")
+@app.post("/users/create")
 def create_user(new_user: dict, user: db.User = Depends(authenticate_user)):
     apartment_id = user.apartment.id
     users = db.get_apartment_users(apartment_id)
@@ -215,7 +215,7 @@ def create_user(new_user: dict, user: db.User = Depends(authenticate_user)):
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-@app.post("/rfid/create")
+@app.post("/rfid/register")
 def register_rfid(
     rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
 ):
@@ -262,7 +262,7 @@ def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
 
 
 @app.delete("/rfid/delete")
-def delete_rfid_endpoint(
+def delete_rfid(
     user_id: int, hashed_uuid: str, user: db.User = Depends(authenticate_user)
 ):
     if db.delete_rfid(user_id, hashed_uuid):
@@ -271,7 +271,7 @@ def delete_rfid_endpoint(
 
 
 @app.get("/rfid/list")
-def list_rfids_endpoint():
+def list_rfids():
     rfids = db.get_all_rfids()
     return [
         {
@@ -286,9 +286,7 @@ def list_rfids_endpoint():
 
 
 @app.post("/pin/create")
-def create_pin_endpoint(
-    pin_request: PinRequest, user: db.User = Depends(authenticate_user)
-):
+def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_user)):
     salt = utils.generate_salt()
     hashed_pin = utils.hash_secret(salt=salt, payload=pin_request.pin)
     user_id = db.get_user(user.email).id
@@ -297,7 +295,7 @@ def create_pin_endpoint(
 
 
 @app.post("/pin/update/{pin_id}")
-def update_pin_endpoint(
+def update_pin(
     pin_id: int, pin_request: PinRequest, user: db.User = Depends(authenticate_user)
 ):
     salt = utils.generate_salt()
@@ -308,8 +306,8 @@ def update_pin_endpoint(
     raise HTTPException(status_code=404, detail="PIN not found")
 
 
-@app.get("/pin/user")
-def get_pins_by_user_endpoint(user: db.User = Depends(authenticate_user)):
+@app.get("/pin/list/user")
+def list_pins_by_user(user: db.User = Depends(authenticate_user)):
     user_id = db.get_user(user.email).id
     pins = db.get_pins_by_user(user_id)
     return [
@@ -322,8 +320,8 @@ def get_pins_by_user_endpoint(user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.get("/pin/apartment")
-def get_pins_by_apartment_endpoint(user: db.User = Depends(authenticate_user)):
+@app.get("/pin/list/apartment")
+def list_pins_by_apartment(user: db.User = Depends(authenticate_user)):
     apartment_id = user.apartment.id
     pins = db.get_pins_by_apartment(apartment_id)
     return [
@@ -334,6 +332,47 @@ def get_pins_by_apartment_endpoint(user: db.User = Depends(authenticate_user)):
         }
         for pin in pins
     ]
+
+
+@app.get("/users/list")
+def list_users(user: db.User = Depends(authenticate_user)):
+    if not user.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    users = db.get_all_users()
+    return [
+        {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "admin": user.admin,
+            "guest": user.guest,
+            "apartment_number": user.apartment.number,
+        }
+        for user in users
+    ]
+
+
+@app.put("/users/update/{user_id}")
+def update_user(
+    user_id: int, updated_user: dict, current_user: db.User = Depends(authenticate_user)
+):
+    if not current_user.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    updated_user["id"] = user_id
+    db.save_user(updated_user)
+    return {"status": "User updated successfully"}
+
+
+@app.delete("/users/delete/{user_id}")
+def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)):
+    if not current_user.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if db.remove_user(user_id):
+        return {"status": "User deleted successfully"}
+    raise HTTPException(status_code=404, detail="User not found")
 
 
 if __name__ == "__main__":

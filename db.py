@@ -408,3 +408,14 @@ def get_pins_by_apartment(apartment_id):
 def get_all_pins():
     with get_db() as db:
         return db.query(Pin).all()
+
+
+def remove_user(user_id):
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            db.delete(user)
+            db.commit()
+            logger.info(f"User {user.email} deleted")
+            return True
+        return False
