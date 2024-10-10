@@ -16,6 +16,7 @@ load_dotenv()
 
 INPUT_MODE = os.getenv("INPUT_MODE", "standard")
 MAX_INPUT_LENGTH = 20  # Set a reasonable maximum length for input
+PIN_LENGTH = os.getenv("PIN_LENGTH", 4)
 
 KEY_CODES = {
     "0225": "1",
@@ -99,11 +100,18 @@ async def read_events(device, input_buffer, special_input_buffer, start_time, ti
                             # Special handling logic
                             if key == "ENTER":
                                 input_sequence = "".join(special_input_buffer)
+                                # try decoding the input
                                 decoded_key = decode_keypad_input(input_sequence)
                                 if decoded_key:
                                     input_buffer.append(decoded_key)
+                                else:
+                                    # we couldn't decode the input, meaning it's probably a RFID
+                                    input_buffer.append(input_sequence)
                                 special_input_buffer.clear()
-                                return  # Return after processing ENTER key
+                                if not decoded_key:
+                                    return  # Return after processing ENTER key
+                                elif len(input_buffer) == PIN_LENGTH:
+                                    return "".join(input_buffer)
                             else:
                                 special_input_buffer.append(key)
                         else:

@@ -61,14 +61,14 @@ def check_pin(input_value):
     all_pins = get_all_pins()
     for pin in all_pins:
         if pin.hashed_pin == hashed_input:
-            logging.info(f"Valid PIN used for user {pin.user.name}")
+            logging.info(f"Valid PIN used (hash {hashed_input})")
             return True
 
     # If not a PIN, check if it's an RFID
     all_rfids = get_all_rfids()
     for rfid in all_rfids:
         if rfid.hashed_uuid == hashed_input:
-            logging.info(f"Valid RFID used for user {rfid.user.name}")
+            logging.info(f"Valid RFID used (hash {hashed_input})")
             return True
 
     logging.warning("Invalid PIN or RFID attempted")
