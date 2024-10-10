@@ -54,6 +54,7 @@ class Apartment(Base):
     __tablename__ = "apartments"
     id = Column(Integer, primary_key=True, index=True)
     number = Column(String, unique=True, nullable=False)
+    description = Column(String)
     users = relationship("User", back_populates="apartment", lazy="joined")
 
 
@@ -124,9 +125,9 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 
-def add_apartment(number):
+def add_apartment(number, description=None):
     with get_db() as db:
-        new_apartment = Apartment(number=number)
+        new_apartment = Apartment(number=number, description=description)
         db.add(new_apartment)
         db.commit()
         db.refresh(new_apartment)
@@ -412,5 +413,34 @@ def remove_user(user_id):
             db.delete(user)
             db.commit()
             logger.info(f"User {user.email} deleted")
+            return True
+        return False
+
+
+def get_all_apartments():
+    with get_db() as db:
+        return db.query(Apartment).all()
+
+
+def update_apartment(apartment_id, updated_data):
+    with get_db() as db:
+        apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
+        if apartment:
+            for key, value in updated_data.items():
+                setattr(apartment, key, value)
+            db.commit()
+            db.refresh(apartment)
+            logger.info(f"Apartment {apartment.number} updated")
+            return apartment
+        return None
+
+
+def remove_apartment(apartment_id):
+    with get_db() as db:
+        apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
+        if apartment:
+            db.delete(apartment)
+            db.commit()
+            logger.info(f"Apartment {apartment.number} deleted")
             return True
         return False

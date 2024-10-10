@@ -404,6 +404,60 @@ def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)
     raise HTTPException(status_code=404, detail="User not found")
 
 
+@app.get("/apartments/list")
+def list_apartments(user: db.User = Depends(authenticate_user)):
+    if not user.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    apartments = db.get_all_apartments()
+    return [
+        {
+            "id": apartment.id,
+            "number": apartment.number,
+            "description": apartment.description,
+        }
+        for apartment in apartments
+    ]
+
+
+@app.post("/apartments/create")
+def create_apartment(apartment: dict, user: db.User = Depends(authenticate_user)):
+    if not user.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    new_apartment = db.add_apartment(apartment["number"], apartment.get("description"))
+    return {
+        "id": new_apartment.id,
+        "number": new_apartment.number,
+        "description": new_apartment.description,
+    }
+
+
+@app.put("/apartments/update/{apartment_id}")
+def update_apartment(
+    apartment_id: int,
+    updated_apartment: dict,
+    user: db.User = Depends(authenticate_user),
+):
+    if not user.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    apartment = db.update_apartment(apartment_id, updated_apartment)
+    if apartment:
+        return {
+            "id": apartment.id,
+            "number": apartment.number,
+            "description": apartment.description,
+        }
+    raise HTTPException(status_code=404, detail="Apartment not found")
+
+
+@app.delete("/apartments/delete/{apartment_id}")
+def delete_apartment(apartment_id: int, user: db.User = Depends(authenticate_user)):
+    if not user.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if db.remove_apartment(apartment_id):
+        return {"status": "Apartment deleted successfully"}
+    raise HTTPException(status_code=404, detail="Apartment not found")
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("API_PORT", 8000))
     uvicorn.run(app, host=os.environ.get("API_HOST", "localhost"), port=port)
