@@ -31,18 +31,12 @@ def parse_args():
         help="RFID length (overrides RFID_LENGTH env var). Defaults to 10 even without the env var.",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
-    parser.add_argument(
-        "--input-mode",
-        choices=["standard", "special"],
-        default=os.getenv("INPUT_MODE", "standard"),
-        help="Input mode: 'standard' for regular input, 'special' for T9 key code input",
-    )
     return parser.parse_args()
 
 
 args = parse_args()
 RFID_LENGTH = args.rfid_length or int(os.getenv("RFID_LENGTH", 10))
-INPUT_MODE = args.input_mode
+INPUT_MODE = os.getenv("INPUT_MODE", "standard")
 
 KEY_CODES = {
     "0225": "1",
