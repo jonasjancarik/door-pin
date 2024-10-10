@@ -18,6 +18,8 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+If you encounter an error installing `evdev`, try installing the `python3-evdev` package with `sudo apt-get install python3-evdev`.
+
 ### Development
 
 For development on a machine which doesn't support `RPi.GPIO` and `evdev`, run `grep -vE '^(RPi\.GPIO|evdev)' requirements.txt | pip install -r /dev/stdin` instead of the usual `pip install -r requirements.txt` to exclude these packages.
