@@ -56,34 +56,63 @@ async def read_input(timeout=None):
     special_input_buffer = deque(maxlen=10)
     start_time = asyncio.get_event_loop().time()
 
+    # Create a list to store the tasks for each keyboard
+    tasks = []
+
+    # Create a coroutine for each keyboard
     for keyboard in keyboards:
-        async for event in keyboard.async_read_loop():
+        tasks.append(
+            asyncio.create_task(
+                read_events(
+                    keyboard, input_buffer, special_input_buffer, start_time, timeout
+                )
+            )
+        )
+
+    # Wait for any of the tasks to complete
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+
+    # Cancel all pending tasks
+    for task in pending:
+        task.cancel()
+
+    print(f"Input buffer: {input_buffer}")
+    print(f"Special input buffer: {special_input_buffer}")
+
+    # Return the input buffer
+    return "".join(input_buffer) if input_buffer else None
+
+
+async def read_events(device, input_buffer, special_input_buffer, start_time, timeout):
+    try:
+        async for event in device.async_read_loop():
             if timeout and (asyncio.get_event_loop().time() - start_time) > timeout:
                 logging.warning("Input timeout reached.")
-                return "".join(input_buffer) if input_buffer else None
-
+                return
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
                 if data.keystate == 1:  # Key down events only
                     key = process_key(data.keycode)
-
-                    if INPUT_MODE == "special":
-                        if key == "ENTER":
-                            input_sequence = "".join(special_input_buffer)
-                            decoded_key = decode_keypad_input(input_sequence)
-                            if decoded_key:
-                                input_buffer.append(decoded_key)
-                            special_input_buffer.clear()
+                    if key:
+                        logging.debug(f"Key pressed: {key}")
+                        if INPUT_MODE == "special":
+                            # Special handling logic
+                            if key == "ENTER":
+                                input_sequence = "".join(special_input_buffer)
+                                decoded_key = decode_keypad_input(input_sequence)
+                                if decoded_key:
+                                    input_buffer.append(decoded_key)
+                                special_input_buffer.clear()
+                                return  # Return after processing ENTER key
+                            else:
+                                special_input_buffer.append(key)
                         else:
-                            special_input_buffer.append(key)
-                    else:
-                        if key and (key.isdigit() or key.isalpha()):
-                            input_buffer.append(key)
-
-                    if key == "ENTER":
-                        return "".join(input_buffer)
-
-    return "".join(input_buffer) if input_buffer else None
+                            if key and (key.isdigit() or key.isalpha()):
+                                input_buffer.append(key)
+                            if key == "ENTER":
+                                return  # Return when ENTER key is pressed
+    except Exception as e:
+        logging.error(f"Error reading events from device {device.path}: {e}")
 
 
 def process_key(keycode):
@@ -91,6 +120,8 @@ def process_key(keycode):
         key_code = keycode[0]
     else:
         key_code = keycode
+
+    logging.debug(f"Processing keycode: {key_code}")
 
     if "KEY_" in key_code:
         return key_code.split("_")[1].replace("KP", "")
