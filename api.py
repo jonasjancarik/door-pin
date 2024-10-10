@@ -4,7 +4,7 @@ import time
 import boto3
 import logging
 from botocore.exceptions import ClientError, EndpointConnectionError
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 import utils
@@ -13,7 +13,6 @@ import random
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import db
-import rfid
 from typing import Optional
 from input_handler import read_input
 
@@ -226,27 +225,39 @@ def unlock_door(_: db.User = Depends(authenticate_user)):
 
 
 @app.post("/users/create")
-def create_user(new_user: dict, user: db.User = Depends(authenticate_user)):
-    apartment_id = user.apartment.id
-    users = db.get_apartment_users(apartment_id)
-    for user_data in users:
-        if user_data.email == user.email:
-            if not user_data.guest:
-                for existing_user in users:
-                    if existing_user.email == new_user["email"]:
-                        raise HTTPException(
-                            status_code=409, detail="User already exists"
-                        )
-                new_user["creator_id"] = user.id
-                new_user["apartment_id"] = apartment_id
-                db.save_user(new_user)
-                return {"status": "user created"}
-            else:
-                raise HTTPException(
-                    status_code=403, detail="Guests cannot create users"
-                )
+def create_user(new_user: dict, current_user: db.User = Depends(authenticate_user)):
+    if current_user.guest:
+        raise HTTPException(status_code=403, detail="Guests cannot create users")
 
-    raise HTTPException(status_code=401, detail="Unauthorized")
+    apartment = db.get_apartment_by_number(new_user["apartment_number"])
+    if not apartment:
+        raise HTTPException(status_code=404, detail="Apartment not found")
+
+    if apartment.id != current_user.apartment.id and not current_user.admin:
+        raise HTTPException(
+            status_code=403, detail="You can only create users for your own apartment"
+        )
+
+    existing_user = db.get_user(new_user["email"])
+    if existing_user:
+        raise HTTPException(
+            status_code=409, detail="User with this email already exists"
+        )
+
+    new_user["creator_id"] = current_user.id
+    new_user["apartment_id"] = apartment.id
+    created_user = db.add_user(new_user)
+
+    return {
+        "status": "user created",
+        "user": {
+            "id": created_user.id,
+            "name": created_user.name,
+            "email": created_user.email,
+            "apartment_number": apartment.number,
+            "guest": created_user.guest,
+        },
+    }
 
 
 @app.post("/rfid/register")
@@ -302,14 +313,57 @@ def delete_rfid(
 
 
 @app.get("/rfid/list")
-def list_rfids():
-    rfids = db.get_all_rfids()
+def list_rfids(current_user: db.User = Depends(authenticate_user)):
+    if current_user.admin:
+        rfids = db.get_all_rfids()
+    elif not current_user.guest:
+        rfids = db.get_apartment_rfids(current_user.apartment.id)
+    else:
+        raise HTTPException(status_code=403, detail="Guests cannot list RFIDs")
+
     return [
         {
-            "user_id": rfid.user_id,
-            "hashed_uuid": rfid.hashed_uuid,
+            "id": rfid.id,
             "label": rfid.label,
-            "creator_email": rfid.creator_email,
+            "created_at": rfid.created_at,
+            "user_id": rfid.user_id,
+            "user_email": rfid.user.email,
+        }
+        for rfid in rfids
+    ]
+
+
+@app.get("/rfid/list/user")
+def list_user_rfids(
+    user_id: Optional[int] = Query(
+        None, description="Optional user ID to fetch RFIDs for"
+    ),
+    current_user: db.User = Depends(authenticate_user),
+):
+    if user_id is None:
+        # If no user_id is provided, return RFIDs for the current user
+        rfids = db.get_user_rfids(current_user.id)
+    else:
+        # Check permissions based on user role
+        if current_user.admin:
+            # Admin can get any user's RFIDs
+            rfids = db.get_user_rfids(user_id)
+        elif (
+            not current_user.guest
+            and current_user.apartment_id == db.get_user(user_id).apartment_id
+        ):
+            # Non-guest users can get RFIDs of users from their apartment
+            rfids = db.get_user_rfids(user_id)
+        elif current_user.id == user_id:
+            # Guests can only get their own RFIDs
+            rfids = db.get_user_rfids(user_id)
+        else:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    return [
+        {
+            "id": rfid.id,
+            "label": rfid.label,
             "created_at": rfid.created_at,
         }
         for rfid in rfids
@@ -324,7 +378,9 @@ def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_use
     return {"status": "PIN saved", "pin_id": pin.id}
 
 
-@app.post("/pin/update/{pin_id}")
+@app.post(
+    "/pin/update/{pin_id}"
+)  # todo: this should serve to update the pin label only
 def update_pin(
     pin_id: int, pin_request: PinRequest, user: db.User = Depends(authenticate_user)
 ):
@@ -335,24 +391,54 @@ def update_pin(
     raise HTTPException(status_code=404, detail="PIN not found")
 
 
-@app.get("/pin/list/user")
-def list_pins_by_user(user: db.User = Depends(authenticate_user)):
-    user_id = db.get_user(user.email).id
-    pins = db.get_pins_by_user(user_id)
+@app.get("/pin/list")
+def list_pins(current_user: db.User = Depends(authenticate_user)):
+    if current_user.admin:
+        pins = db.get_all_pins()
+    elif not current_user.guest:
+        pins = db.get_apartment_pins(current_user.apartment.id)
+    else:
+        raise HTTPException(status_code=403, detail="Guests cannot list PINs")
+
     return [
         {
             "id": pin.id,
             "label": pin.label,
             "created_at": pin.created_at,
+            "user_id": pin.user_id,
+            "user_email": pin.user.email,
         }
         for pin in pins
     ]
 
 
-@app.get("/pin/list/apartment")
-def list_pins_by_apartment(user: db.User = Depends(authenticate_user)):
-    apartment_id = user.apartment.id
-    pins = db.get_pins_by_apartment(apartment_id)
+@app.get("/pin/list/user")
+def list_user_pins(
+    user_id: Optional[int] = Query(
+        None, description="Optional user ID to fetch pins for"
+    ),
+    current_user: db.User = Depends(authenticate_user),
+):
+    if user_id is None:
+        # If no user_id is provided, return pins for the current user
+        pins = db.get_user_pins(current_user.id)
+    else:
+        # Check permissions based on user role
+        if current_user.admin:
+            # Admin can get any user's pins
+            pins = db.get_user_pins(user_id)
+        elif (
+            not current_user.guest
+            and current_user.apartment_id == db.get_user(user_id).apartment_id
+        ):
+            # Non-guest users can get pins of users from their apartment
+            pins = db.get_user_pins(user_id)
+        elif current_user.id == user_id:
+            # Guests can only get their own pins
+            pins = db.get_user_pins(user_id)
+        else:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+
     return [
         {
             "id": pin.id,
@@ -364,10 +450,14 @@ def list_pins_by_apartment(user: db.User = Depends(authenticate_user)):
 
 
 @app.get("/users/list")
-def list_users(user: db.User = Depends(authenticate_user)):
-    if not user.admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    users = db.get_all_users()
+def list_users(current_user: db.User = Depends(authenticate_user)):
+    if current_user.admin:
+        users = db.get_all_users()
+    elif not current_user.guest:
+        users = db.get_apartment_users(current_user.apartment.id)
+    else:
+        raise HTTPException(status_code=403, detail="Guests cannot list users")
+
     return [
         {
             "id": user.id,

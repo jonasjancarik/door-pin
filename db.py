@@ -135,32 +135,8 @@ def add_apartment(number, description=None):
         return new_apartment
 
 
-def add_user(user, apartment_number=None):
+def add_user(user):
     with get_db() as db:
-        if apartment_number:
-            apartment = (
-                db.query(Apartment).filter(Apartment.number == apartment_number).first()
-            )
-            if not apartment:
-                apartment = add_apartment(apartment_number)
-            user["apartment_id"] = apartment.id
-
-        if "creator_id" not in user:
-            if "creator_email" in user:
-                creator = (
-                    db.query(User).filter(User.email == user["creator_email"]).first()
-                )
-                if creator:
-                    user["creator_id"] = creator.id
-                else:
-                    user["creator_id"] = None
-            else:
-                creator = db.query(User).first()
-                if creator:
-                    user["creator_id"] = creator.id
-                else:
-                    user["creator_id"] = None
-
         new_user = User(
             name=user.get("name"),
             email=user.get("email"),
@@ -172,11 +148,6 @@ def add_user(user, apartment_number=None):
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-
-        if not user["creator_id"]:
-            new_user.creator_id = new_user.id
-            db.commit()
-            db.refresh(new_user)
 
         logger.info(f"User {new_user.email} added with ID {new_user.id}")
 
@@ -444,3 +415,33 @@ def remove_apartment(apartment_id):
             logger.info(f"Apartment {apartment.number} deleted")
             return True
         return False
+
+
+def get_all_pins():
+    with get_db() as db:
+        return db.query(Pin).all()
+
+
+def get_apartment_pins(apartment_id):
+    with get_db() as db:
+        return db.query(Pin).join(User).filter(User.apartment_id == apartment_id).all()
+
+
+def get_user_pins(user_id):
+    with get_db() as db:
+        return db.query(Pin).filter(Pin.user_id == user_id).all()
+
+
+def get_all_rfids():
+    with get_db() as db:
+        return db.query(Rfid).all()
+
+
+def get_apartment_rfids(apartment_id):
+    with get_db() as db:
+        return db.query(Rfid).join(User).filter(User.apartment_id == apartment_id).all()
+
+
+def get_user_rfids(user_id):
+    with get_db() as db:
+        return db.query(Rfid).filter(Rfid.user_id == user_id).all()

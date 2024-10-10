@@ -27,21 +27,19 @@ if load_csv.lower() == "y" or load_csv == "":
     # Loop through the CSV file and create a DB entry for each apartment
     for row in data:
         apartment_number = row["apartment_number"]
-        try:
-            db.add_apartment(apartment_number)
-        except sqlalchemy_exc.IntegrityError:
-            print(f"Apartment {apartment_number} already exists.")
-        row["admin"] = (
-            True if row["admin"].lower() == "true" or row["admin"] == "1" else False
-        )
-        row["guest"] = (
-            True if row["guest"].lower() == "true" or row["guest"] == "1" else False
-        )
-        apartment_number = row["apartment_number"]
+        apartment = db.get_apartment_by_number(apartment_number)
+        if not apartment:
+            apartment = db.add_apartment(apartment_number)
+        row["apartment_id"] = apartment.id
         del row["apartment_number"]
-        if db.add_user(row, apartment_number):
+        created_user = db.add_user(row)
+        if created_user:
             print(
-                f"Added user {row['name']} ({row['email']}) to apartment {apartment_number}"
+                f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number}"
+            )
+        else:
+            print(
+                f"Failed to add user {row['name']} ({row['email']}) to apartment {apartment_number}"
             )
 
 else:
@@ -76,23 +74,27 @@ else:
                 # ask for name and email and whether they are an admin or a guest
                 name = input(f"Enter the name for user {j + 1}: ")
                 email = input(f"Enter the email for user {j + 1}: ")
-                admin = input(f"Is user {name} an admin? (y/N)").lower()
-                if admin == "y":
-                    admin = True
-                else:
-                    admin = False
-                if not admin:
-                    guest = input(f"Is user {name} a guest? (y/N) ").lower()
-                    if guest == "y":
-                        guest = True
-                    else:
-                        guest = False
+                admin = input(f"Is user {name} an admin? (y/N)").lower() == "y"
+                guest = (
+                    False
+                    if admin
+                    else input(f"Is user {name} a guest? (y/N) ").lower() == "y"
+                )
 
                 user = {
                     "name": name,
                     "email": email,
                     "admin": admin,
-                    "guest": guest if not admin else False,
+                    "guest": guest,
+                    "apartment_id": db.get_apartment_by_number(apartment_number).id,
                 }
 
-                db.add_user(user, apartment_number)
+                created_user = db.add_user(user)
+                if created_user:
+                    print(
+                        f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number}"
+                    )
+                else:
+                    print(
+                        f"Failed to add user {name} ({email}) to apartment {apartment_number}"
+                    )
