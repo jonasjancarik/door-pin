@@ -5,7 +5,7 @@ import argparse
 from dotenv import load_dotenv
 import os
 from collections import deque
-import db
+from db import get_all_pins, get_all_rfids
 from input_handler import read_input
 
 # Try to import evdev, but don't fail if it's not available
@@ -80,20 +80,37 @@ def find_keyboards():
 input_buffer = deque(maxlen=10)
 
 
+def check_pin(input_value):
+    hashed_input = utils.hash_secret(input_value)
+
+    # Check if it's a PIN
+    all_pins = get_all_pins()
+    for pin in all_pins:
+        if pin.hashed_pin == hashed_input:
+            logging.info(f"Valid PIN used for user {pin.user.name}")
+            return True
+
+    # If not a PIN, check if it's an RFID
+    all_rfids = get_all_rfids()
+    for rfid in all_rfids:
+        if rfid.hashed_uuid == hashed_input:
+            logging.info(f"Valid RFID used for user {rfid.user.name}")
+            return True
+
+    logging.warning("Invalid PIN or RFID attempted")
+    return False
+
+
 async def main():
     while True:
         print("Enter PIN or scan RFID: ", end="", flush=True)
         input_value = await read_input(timeout=args.timeout)
 
         if input_value:
-            if len(input_value) == args.pin_length:
-                if check_pin(input_value):
-                    open_door()
-            elif len(input_value) >= RFID_LENGTH:
-                if check_rfid(input_value):
-                    open_door()
+            if check_pin(input_value):
+                open_door()
             else:
-                logging.debug(f"Input sequence too short: {input_value}")
+                logging.debug(f"Invalid input: {input_value}")
         else:
             logging.info("Input timeout or no input received.")
 

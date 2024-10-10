@@ -1,14 +1,21 @@
 import asyncio
 from collections import deque
-from evdev import InputDevice, categorize, ecodes, list_devices
 import logging
 import os
 from dotenv import load_dotenv
 
+try:
+    from evdev import InputDevice, categorize, ecodes, list_devices
+except ImportError:
+    logging.error(
+        "Failed to import evdev. Make sure you have the evdev library installed."
+    )
+    pass
+
 load_dotenv()
 
-RFID_LENGTH = int(os.getenv("RFID_LENGTH", 10))
 INPUT_MODE = os.getenv("INPUT_MODE", "standard")
+MAX_INPUT_LENGTH = 20  # Set a reasonable maximum length for input
 
 KEY_CODES = {
     "0225": "1",
@@ -45,7 +52,7 @@ async def read_input(timeout=None):
         logging.error("No keyboards found.")
         return None
 
-    input_buffer = deque(maxlen=RFID_LENGTH)
+    input_buffer = deque(maxlen=MAX_INPUT_LENGTH)
     special_input_buffer = deque(maxlen=10)
     start_time = asyncio.get_event_loop().time()
 
@@ -53,7 +60,7 @@ async def read_input(timeout=None):
         async for event in keyboard.async_read_loop():
             if timeout and (asyncio.get_event_loop().time() - start_time) > timeout:
                 logging.warning("Input timeout reached.")
-                return None
+                return "".join(input_buffer) if input_buffer else None
 
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
@@ -73,8 +80,10 @@ async def read_input(timeout=None):
                         if key and (key.isdigit() or key.isalpha()):
                             input_buffer.append(key)
 
-                    if len(input_buffer) == RFID_LENGTH:
+                    if key == "ENTER":
                         return "".join(input_buffer)
+
+    return "".join(input_buffer) if input_buffer else None
 
 
 def process_key(keycode):
