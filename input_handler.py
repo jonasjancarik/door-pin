@@ -52,8 +52,8 @@ async def read_input(timeout=None):
         logging.error("No keyboards found.")
         return None
 
-    input_buffer = []
-    special_input_buffer = []
+    input_buffer = deque(maxlen=MAX_INPUT_LENGTH)
+    special_input_buffer = deque(maxlen=10)
     start_time = asyncio.get_event_loop().time()
 
     # Create a list to store the tasks for each keyboard
@@ -76,17 +76,11 @@ async def read_input(timeout=None):
     for task in pending:
         task.cancel()
 
-    # Process the input buffer
-    if INPUT_MODE == "special":
-        input_sequence = "".join(special_input_buffer)
-        decoded_input = decode_keypad_input(input_sequence)
-    else:
-        decoded_input = "".join(input_buffer)
+    print(f"Input buffer: {input_buffer}")
+    print(f"Special input buffer: {special_input_buffer}")
 
-    logging.debug(f"Decoded input: {decoded_input}")
-
-    # Return the decoded input
-    return decoded_input if decoded_input else None
+    # Return the input buffer
+    return "".join(input_buffer) if input_buffer else None
 
 
 async def read_events(device, input_buffer, special_input_buffer, start_time, timeout):
@@ -102,15 +96,21 @@ async def read_events(device, input_buffer, special_input_buffer, start_time, ti
                     if key:
                         logging.debug(f"Key pressed: {key}")
                         if INPUT_MODE == "special":
+                            # Special handling logic
                             if key == "ENTER":
+                                input_sequence = "".join(special_input_buffer)
+                                decoded_key = decode_keypad_input(input_sequence)
+                                if decoded_key:
+                                    input_buffer.append(decoded_key)
+                                special_input_buffer.clear()
                                 return  # Return after processing ENTER key
                             else:
                                 special_input_buffer.append(key)
                         else:
+                            if key and (key.isdigit() or key.isalpha()):
+                                input_buffer.append(key)
                             if key == "ENTER":
                                 return  # Return when ENTER key is pressed
-                            elif key.isdigit() or key.isalpha():
-                                input_buffer.append(key)
     except Exception as e:
         logging.error(f"Error reading events from device {device.path}: {e}")
 
