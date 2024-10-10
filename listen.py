@@ -38,21 +38,6 @@ args = parse_args()
 RFID_LENGTH = args.rfid_length or int(os.getenv("RFID_LENGTH", 10))
 INPUT_MODE = os.getenv("INPUT_MODE", "standard")
 
-KEY_CODES = {
-    "0225": "1",
-    "0210": "2",
-    "0195": "3",
-    "0180": "4",
-    "0165": "5",
-    "0150": "6",
-    "0135": "7",
-    "0120": "8",
-    "0105": "9",
-    "0240": "0",
-    "0090": "*",
-    "0075": "#",
-}
-
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", logging.INFO),
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -64,17 +49,6 @@ def open_door():
     logging.info("PIN or RFID correct! Activating relay.")
     utils.unlock_door()
     logging.info("Relay deactivated.")
-
-
-def find_keyboards():
-    """Find and return a list of keyboard devices."""
-    devices = [InputDevice(path) for path in list_devices()]
-    keyboards = [
-        device
-        for device in devices
-        if "keyboard" in device.name.lower() or "event" in device.path
-    ]
-    return keyboards
 
 
 input_buffer = deque(maxlen=10)
