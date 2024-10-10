@@ -3,7 +3,7 @@ import os
 import time
 import boto3
 import logging
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import db
 import rfid
 from typing import Optional
+from input_handler import read_input
 
 load_dotenv()
 
@@ -93,10 +94,28 @@ def send_magic_link(request: LoginRequest):
     )
     if not url_to_use.endswith("/"):
         url_to_use += "/"
-    ses_client = boto3.client("ses", region_name=os.getenv("AWS_REGION"))
+
+    aws_region = os.getenv("AWS_REGION")
+    if not aws_region:
+        logging.error("AWS_REGION environment variable is not set")
+        raise HTTPException(status_code=500, detail="Server configuration error")
+
+    try:
+        ses_client = boto3.client("ses", region_name=aws_region)
+    except Exception as e:
+        logging.error(f"Failed to create SES client: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="Failed to initialize email service"
+        )
+
     sender = os.getenv("AWS_SES_SENDER_EMAIL")
+    if not sender:
+        logging.error("AWS_SES_SENDER_EMAIL environment variable is not set")
+        raise HTTPException(status_code=500, detail="Server configuration error")
+
     subject = "Your Login Code"
     body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='{url_to_use}?login_code={login_code}'>Log In</a></p></center></body></html>"""
+
     try:
         response = ses_client.send_email(
             Destination={"ToAddresses": [email]},
@@ -109,9 +128,24 @@ def send_magic_link(request: LoginRequest):
         logging.info(f"Email sent: {response}")
         logging.debug(f"Login code: {login_code}")
         return success_message
+    except EndpointConnectionError as e:
+        logging.error(f"Failed to connect to AWS SES endpoint: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to connect to email service. Please check your AWS region configuration.",
+        )
     except ClientError as e:
-        logging.error(f"Failed to send email: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send email.")
+        logging.error(f"Failed to send email: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send email. Please check your AWS SES configuration.",
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error while sending email: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while sending the email.",
+        )
 
 
 def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
@@ -219,8 +253,7 @@ def create_user(new_user: dict, user: db.User = Depends(authenticate_user)):
 def register_rfid(
     rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
 ):
-    salt = utils.generate_salt()
-    hashed_uuid = utils.hash_secret(salt=salt, payload=rfid_request.uuid)
+    hashed_uuid = utils.hash_secret(payload=rfid_request.uuid)
 
     # If user_email is provided, check if the current user is an admin
     if rfid_request.user_email:
@@ -237,7 +270,7 @@ def register_rfid(
     else:
         user_id = current_user.id
 
-    db.save_rfid(user_id, hashed_uuid, salt, rfid_request.label)
+    db.save_rfid(user_id, hashed_uuid, rfid_request.label)
     return {
         "status": "RFID created",
         "user_email": rfid_request.user_email or current_user.email,
@@ -245,12 +278,10 @@ def register_rfid(
 
 
 @app.get("/rfid/read")
-def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
+async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
-        rfid_uuid = rfid.read_rfid_from_keyboards(
-            timeout=timeout if timeout <= 30 else 30
-        )
+        rfid_uuid = await read_input(timeout=timeout if timeout <= 30 else 30)
         if not rfid_uuid:
             logging.warning("RFID not found within the timeout period")
             raise HTTPException(status_code=404, detail="RFID not found")
@@ -287,10 +318,9 @@ def list_rfids():
 
 @app.post("/pin/create")
 def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_user)):
-    salt = utils.generate_salt()
-    hashed_pin = utils.hash_secret(salt=salt, payload=pin_request.pin)
+    hashed_pin = utils.hash_secret(payload=pin_request.pin)
     user_id = db.get_user(user.email).id
-    pin = db.save_pin(user_id, hashed_pin, salt, pin_request.label)
+    pin = db.save_pin(user_id, hashed_pin, pin_request.label)
     return {"status": "PIN saved", "pin_id": pin.id}
 
 
@@ -298,9 +328,8 @@ def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_use
 def update_pin(
     pin_id: int, pin_request: PinRequest, user: db.User = Depends(authenticate_user)
 ):
-    salt = utils.generate_salt()
-    hashed_pin = utils.hash_secret(salt=salt, payload=pin_request.pin)
-    pin = db.update_pin(pin_id, hashed_pin, salt, pin_request.label)
+    hashed_pin = utils.hash_secret(payload=pin_request.pin)
+    pin = db.update_pin(pin_id, hashed_pin, pin_request.label)
     if pin:
         return {"status": "PIN updated", "pin_id": pin.id}
     raise HTTPException(status_code=404, detail="PIN not found")
