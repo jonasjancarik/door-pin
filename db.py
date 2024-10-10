@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data.db")
 
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -80,7 +80,6 @@ class Rfid(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     hashed_uuid = Column(String, nullable=False)
-    salt = Column(String, nullable=False)
     label = Column(String)
     created_at = Column(
         DateTime, default=datetime.datetime.utcnow
@@ -96,7 +95,6 @@ class Pin(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     hashed_pin = Column(String, nullable=False)
-    salt = Column(String, nullable=False)
     label = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     user = relationship("User", back_populates="pins", lazy="joined")
@@ -247,11 +245,9 @@ def update_user_login_codes(email, login_codes):
         return None
 
 
-def save_rfid(user_id, hashed_uuid, salt, label):
+def save_rfid(user_id, hashed_uuid, label):
     with get_db() as db:
-        new_rfid = Rfid(
-            user_id=user_id, hashed_uuid=hashed_uuid, salt=salt, label=label
-        )
+        new_rfid = Rfid(user_id=user_id, hashed_uuid=hashed_uuid, label=label)
         db.add(new_rfid)
         db.commit()
         db.refresh(new_rfid)
@@ -360,9 +356,9 @@ def save_login_code(user_id, code_hash, expiration):
         return new_code
 
 
-def save_pin(user_id, hashed_pin, salt, label):
+def save_pin(user_id, hashed_pin, label):
     with get_db() as db:
-        new_pin = Pin(user_id=user_id, hashed_pin=hashed_pin, salt=salt, label=label)
+        new_pin = Pin(user_id=user_id, hashed_pin=hashed_pin, label=label)
         db.add(new_pin)
         db.commit()
         db.refresh(new_pin)
@@ -370,12 +366,11 @@ def save_pin(user_id, hashed_pin, salt, label):
         return new_pin
 
 
-def update_pin(pin_id, hashed_pin, salt, label):
+def update_pin(pin_id, hashed_pin, label):
     with get_db() as db:
         pin = db.query(Pin).filter(Pin.id == pin_id).first()
         if pin:
             pin.hashed_pin = hashed_pin
-            pin.salt = salt
             pin.label = label
             db.commit()
             db.refresh(pin)
