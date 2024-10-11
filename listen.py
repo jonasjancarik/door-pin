@@ -8,14 +8,6 @@ from collections import deque
 from db import get_all_pins, get_all_rfids
 from input_handler import read_input
 
-# Try to import evdev, but don't fail if it's not available
-try:
-    from evdev import InputDevice, categorize, ecodes, list_devices
-
-    EVDEV_AVAILABLE = True
-except ImportError:
-    EVDEV_AVAILABLE = False
-
 load_dotenv()
 
 
