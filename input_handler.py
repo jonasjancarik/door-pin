@@ -77,9 +77,6 @@ async def read_input(timeout=None):
     for task in pending:
         task.cancel()
 
-    print(f"Input buffer: {input_buffer}")
-    print(f"Special input buffer: {special_input_buffer}")
-
     # Return the input buffer
     return "".join(input_buffer) if input_buffer else None
 
