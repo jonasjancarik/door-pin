@@ -211,7 +211,7 @@ def exchange_code(login_code: LoginCode):
                 "apartment_number": user.apartment.number,
                 "email": user.email,
                 "name": user.name,
-                "admin": user.admin,
+                "role": user.role,
             },
         }
 
@@ -518,7 +518,7 @@ def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)
 
 @app.get("/apartments/list")
 def list_apartments(user: db.User = Depends(authenticate_user)):
-    if not user.admin:
+    if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     apartments = db.get_all_apartments()
     return [
@@ -533,7 +533,7 @@ def list_apartments(user: db.User = Depends(authenticate_user)):
 
 @app.post("/apartments/create")
 def create_apartment(apartment: dict, user: db.User = Depends(authenticate_user)):
-    if not user.admin:
+    if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     new_apartment = db.add_apartment(apartment["number"], apartment.get("description"))
     return {
@@ -549,7 +549,7 @@ def update_apartment(
     updated_apartment: dict,
     user: db.User = Depends(authenticate_user),
 ):
-    if not user.admin:
+    if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     apartment = db.update_apartment(apartment_id, updated_apartment)
     if apartment:
@@ -563,7 +563,7 @@ def update_apartment(
 
 @app.delete("/apartments/delete/{apartment_id}")
 def delete_apartment(apartment_id: int, user: db.User = Depends(authenticate_user)):
-    if not user.admin:
+    if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     if db.remove_apartment(apartment_id):
         return {"status": "Apartment deleted successfully"}
