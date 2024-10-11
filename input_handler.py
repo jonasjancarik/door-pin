@@ -84,14 +84,19 @@ async def read_input(timeout=None):
 async def read_events(device, input_buffer, special_input_buffer, start_time, timeout):
     try:
         async for event in device.async_read_loop():
-            if timeout and (asyncio.get_event_loop().time() - start_time) > timeout:
-                logging.warning("Input timeout reached.")
-                return
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
                 if data.keystate == 1:  # Key down events only
+                    current_time = asyncio.get_event_loop().time()
                     key = process_key(data.keycode)
                     if key:
+                        if timeout and (current_time - start_time) > timeout:
+                            logging.warning(
+                                "Input timeout reached. Resetting input buffer."
+                            )
+                            input_buffer.clear()
+                            special_input_buffer.clear()
+                        start_time = current_time  # Reset start time on keypress
                         logging.debug(f"Key pressed: {key}")
                         if INPUT_MODE == "special":
                             # Special handling logic
