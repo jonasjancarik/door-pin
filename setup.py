@@ -32,10 +32,15 @@ if load_csv.lower() == "y" or load_csv == "":
             apartment = db.add_apartment(apartment_number)
         row["apartment_id"] = apartment.id
         del row["apartment_number"]
+
+        # Remove 'admin' and 'guest' keys
+        row.pop("admin", None)
+        row.pop("guest", None)
+
         created_user = db.add_user(row)
         if created_user:
             print(
-                f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number}"
+                f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number} with role {created_user.role}"
             )
         else:
             print(
@@ -71,28 +76,26 @@ else:
                     print("Invalid input. Please enter a number.")
                     continue
             for j in range(num_users):
-                # ask for name and email and whether they are an admin or a guest
+                # ask for name, email, and role
                 name = input(f"Enter the name for user {j + 1}: ")
                 email = input(f"Enter the email for user {j + 1}: ")
-                admin = input(f"Is user {name} an admin? (y/N)").lower() == "y"
-                guest = (
-                    False
-                    if admin
-                    else input(f"Is user {name} a guest? (y/N) ").lower() == "y"
-                )
+                role = input(
+                    f"Enter the role for user {name} (admin/apartment_admin/guest) [apartment_admin]: "
+                ).lower()
+                if role not in ["admin", "apartment_admin", "guest"]:
+                    role = "apartment_admin"
 
                 user = {
                     "name": name,
                     "email": email,
-                    "admin": admin,
-                    "guest": guest,
+                    "role": role,
                     "apartment_id": db.get_apartment_by_number(apartment_number).id,
                 }
 
                 created_user = db.add_user(user)
                 if created_user:
                     print(
-                        f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number}"
+                        f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number} with role {created_user.role}"
                     )
                 else:
                     print(
