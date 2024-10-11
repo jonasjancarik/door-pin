@@ -265,6 +265,7 @@ def register_rfid(
     rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
 ):
     hashed_uuid = utils.hash_secret(payload=rfid_request.uuid)
+    last_four_digits = rfid_request.uuid[-4:]
 
     # If user_email is provided, check if the current user is an admin
     if rfid_request.user_email:
@@ -281,7 +282,7 @@ def register_rfid(
     else:
         user_id = current_user.id
 
-    db.save_rfid(user_id, hashed_uuid, rfid_request.label)
+    db.save_rfid(user_id, hashed_uuid, last_four_digits, rfid_request.label)
     return {
         "status": "RFID created",
         "user_email": rfid_request.user_email or current_user.email,
@@ -328,6 +329,7 @@ def list_rfids(current_user: db.User = Depends(authenticate_user)):
             "created_at": rfid.created_at,
             "user_id": rfid.user_id,
             "user_email": rfid.user.email,
+            "last_four_digits": rfid.last_four_digits,
         }
         for rfid in rfids
     ]
@@ -365,6 +367,7 @@ def list_user_rfids(
             "id": rfid.id,
             "label": rfid.label,
             "created_at": rfid.created_at,
+            "last_four_digits": rfid.last_four_digits,
         }
         for rfid in rfids
     ]

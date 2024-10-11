@@ -116,6 +116,7 @@ def add_rfid(apartment_number, user_email, label):
 
     salt = utils.generate_salt()
     hashed_uuid = utils.hash_secret(salt=salt, payload=rfid)
+    last_four_digits = rfid[-4:]
 
     # get creator id from email
     if user := db.get_user(user_email):
@@ -124,7 +125,7 @@ def add_rfid(apartment_number, user_email, label):
         print("User not found.")
         return
 
-    db.save_rfid(user_id, hashed_uuid, salt, label)
+    db.save_rfid(user_id, hashed_uuid, last_four_digits, label)
     print(f"New RFID for apartment number {apartment_number} stored.")
 
 
