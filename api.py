@@ -4,7 +4,7 @@ import time
 import boto3
 import logging
 from botocore.exceptions import ClientError, EndpointConnectionError
-from fastapi import FastAPI, HTTPException, Depends, Request, Query
+from fastapi import FastAPI, HTTPException, Depends, Request, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 import utils
@@ -224,24 +224,31 @@ def unlock_door(_: db.User = Depends(authenticate_user)):
     return {"message": "Door unlocked successfully"}
 
 
-@app.post("/users/create")
+@app.post("/users/create", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: dict, current_user: db.User = Depends(authenticate_user)):
     if current_user.guest:
-        raise HTTPException(status_code=403, detail="Guests cannot create users")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
+        )
 
-    apartment = db.get_apartment_by_number(new_user["apartment_number"])
+    apartment = db.get_apartment_by_number(new_user.get("apartment_number"))
     if not apartment:
-        raise HTTPException(status_code=404, detail="Apartment not found")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Apartment with number {new_user.get('apartment_number')} not found",
+        )
 
     if apartment.id != current_user.apartment.id and not current_user.admin:
         raise HTTPException(
-            status_code=403, detail="You can only create users for your own apartment"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only create users for your own apartment",
         )
 
-    existing_user = db.get_user(new_user["email"])
+    existing_user = db.get_user(new_user.get("email"))
     if existing_user:
         raise HTTPException(
-            status_code=409, detail="User with this email already exists"
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"User with email {new_user.get('email')} already exists",
         )
 
     new_user["creator_id"] = current_user.id
