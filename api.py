@@ -231,6 +231,21 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
             status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
         )
 
+    print(new_user, flush=True)
+
+    # require that the new user has an apartment number and email
+    if not new_user.get("apartment_number") or not new_user.get("email"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing apartment number or email",
+        )
+
+    if new_user.get("admin") and not current_user.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can create admins",
+        )
+
     apartment = db.get_apartment_by_number(new_user.get("apartment_number"))
     if not apartment:
         raise HTTPException(
@@ -263,6 +278,7 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
             "email": created_user.email,
             "apartment_number": apartment.number,
             "guest": created_user.guest,
+            "admin": created_user.admin,
         },
     }
 
