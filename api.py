@@ -226,24 +226,21 @@ def unlock_door(_: db.User = Depends(authenticate_user)):
 
 @app.post("/users/create", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: dict, current_user: db.User = Depends(authenticate_user)):
-    if current_user.guest:
+    if current_user.role == "guest":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
         )
 
-    print(new_user, flush=True)
-
-    # require that the new user has an apartment number and email
     if not new_user.get("apartment_number") or not new_user.get("email"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing apartment number or email",
         )
 
-    if new_user.get("admin") and not current_user.admin:
+    if new_user.get("role") == "admin" and current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can create admins",
+            detail="Only admins can create admin users",
         )
 
     apartment = db.get_apartment_by_number(new_user.get("apartment_number"))
@@ -253,7 +250,7 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
             detail=f"Apartment with number {new_user.get('apartment_number')} not found",
         )
 
-    if apartment.id != current_user.apartment.id and not current_user.admin:
+    if apartment.id != current_user.apartment.id and current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only create users for your own apartment",
@@ -268,6 +265,7 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
 
     new_user["creator_id"] = current_user.id
     new_user["apartment_id"] = apartment.id
+    new_user["role"] = new_user.get("role", "apartment_admin")
     created_user = db.add_user(new_user)
 
     return {
@@ -277,8 +275,7 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
             "name": created_user.name,
             "email": created_user.email,
             "apartment_number": apartment.number,
-            "guest": created_user.guest,
-            "admin": created_user.admin,
+            "role": created_user.role,
         },
     }
 
@@ -292,7 +289,7 @@ def create_rfid(
 
     # If user_email is provided, check if the current user is an admin
     if rfid_request.user_email:
-        if not current_user.admin:
+        if current_user.role != "admin":
             raise HTTPException(
                 status_code=403,
                 detail="Only admin users can create RFIDs for other users",
@@ -338,9 +335,9 @@ def delete_rfid(
 
 @app.get("/rfid/list")
 def list_rfids(current_user: db.User = Depends(authenticate_user)):
-    if current_user.admin:
+    if current_user.role == "admin":
         rfids = db.get_all_rfids()
-    elif not current_user.guest:
+    elif current_user.role == "apartment_admin":
         rfids = db.get_apartment_rfids(current_user.apartment.id)
     else:
         raise HTTPException(status_code=403, detail="Guests cannot list RFIDs")
@@ -370,11 +367,11 @@ def list_user_rfids(
         rfids = db.get_user_rfids(current_user.id)
     else:
         # Check permissions based on user role
-        if current_user.admin:
+        if current_user.role == "admin":
             # Admin can get any user's RFIDs
             rfids = db.get_user_rfids(user_id)
         elif (
-            not current_user.guest
+            current_user.role == "apartment_admin"
             and current_user.apartment_id == db.get_user(user_id).apartment_id
         ):
             # Non-guest users can get RFIDs of users from their apartment
@@ -419,9 +416,9 @@ def update_pin(
 
 @app.get("/pin/list")
 def list_pins(current_user: db.User = Depends(authenticate_user)):
-    if current_user.admin:
+    if current_user.role == "admin":
         pins = db.get_all_pins()
-    elif not current_user.guest:
+    elif current_user.role == "apartment_admin":
         pins = db.get_apartment_pins(current_user.apartment.id)
     else:
         raise HTTPException(status_code=403, detail="Guests cannot list PINs")
@@ -450,11 +447,11 @@ def list_user_pins(
         pins = db.get_user_pins(current_user.id)
     else:
         # Check permissions based on user role
-        if current_user.admin:
+        if current_user.role == "admin":
             # Admin can get any user's pins
             pins = db.get_user_pins(user_id)
         elif (
-            not current_user.guest
+            current_user.role == "apartment_admin"
             and current_user.apartment_id == db.get_user(user_id).apartment_id
         ):
             # Non-guest users can get pins of users from their apartment
@@ -477,9 +474,9 @@ def list_user_pins(
 
 @app.get("/users/list")
 def list_users(current_user: db.User = Depends(authenticate_user)):
-    if current_user.admin:
+    if current_user.role == "admin":
         users = db.get_all_users()
-    elif not current_user.guest:
+    elif current_user.role == "apartment_admin":
         users = db.get_apartment_users(current_user.apartment.id)
     else:
         raise HTTPException(status_code=403, detail="Guests cannot list users")
@@ -489,8 +486,7 @@ def list_users(current_user: db.User = Depends(authenticate_user)):
             "id": user.id,
             "name": user.name,
             "email": user.email,
-            "admin": user.admin,
-            "guest": user.guest,
+            "role": user.role,
             "apartment_number": user.apartment.number,
         }
         for user in users
@@ -501,7 +497,7 @@ def list_users(current_user: db.User = Depends(authenticate_user)):
 def update_user(
     user_id: int, updated_user: dict, current_user: db.User = Depends(authenticate_user)
 ):
-    if not current_user.admin:
+    if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     user = db.get_user(user_id)
     if not user:
@@ -513,7 +509,7 @@ def update_user(
 
 @app.delete("/users/delete/{user_id}")
 def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)):
-    if not current_user.admin:
+    if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     if db.remove_user(user_id):
         return {"status": "User deleted successfully"}

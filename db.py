@@ -64,8 +64,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     email = Column(String, unique=True, nullable=False)
-    admin = Column(Boolean, default=False)
-    guest = Column(Boolean, default=False)
+    role = Column(
+        String, default="apartment_admin"
+    )  # Can be 'apartment_admin', 'admin', or 'guest'
     creator_id = Column(String)
     apartment_id = Column(Integer, ForeignKey("apartments.id"))
     apartment = relationship("Apartment", back_populates="users", lazy="joined")
@@ -141,8 +142,7 @@ def add_user(user):
         new_user = User(
             name=user.get("name"),
             email=user.get("email"),
-            admin=user.get("admin", False),
-            guest=user.get("guest", False),
+            role=user.get("role", "apartment_admin"),
             creator_id=user.get("creator_id"),
             apartment_id=user.get("apartment_id"),
         )

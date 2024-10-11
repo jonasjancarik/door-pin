@@ -1,3 +1,4 @@
-apartment_number,name,email,admin,guest
-1,John Doe,john@doe.com,1,0
-2,Jane Doe,Jane@doe.com,0,1
+apartment_number,name,email,role
+1,John Doe,john@doe.com,admin
+2,Peter Smith,peter@smith.com,apartment_admin
+2,Mary Jones,mary@jones.com,guest
