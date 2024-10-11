@@ -260,8 +260,8 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
     }
 
 
-@app.post("/rfid/register")
-def register_rfid(
+@app.post("/rfid/create")
+def create_rfid(
     rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
 ):
     hashed_uuid = utils.hash_secret(payload=rfid_request.uuid)
@@ -272,7 +272,7 @@ def register_rfid(
         if not current_user.admin:
             raise HTTPException(
                 status_code=403,
-                detail="Only admin users can register RFIDs for other users",
+                detail="Only admin users can create RFIDs for other users",
             )
 
         target_user = db.get_user(rfid_request.user_email)
