@@ -77,10 +77,15 @@ def check_pin(input_value):
 
 async def main():
     while True:
-        print("Enter PIN or scan RFID: ", end="", flush=True)
+        print("Waiting for a complete PIN or RFID input...", flush=True)
+
         input_value = await read_input(timeout=args.timeout)
 
         if input_value:
+            if os.getenv("DEBUG"):
+                print(f"Input received: {input_value}")
+            else:
+                print("Input received...", flush=True)
             if check_pin(input_value):
                 open_door()
             else:
