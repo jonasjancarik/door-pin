@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import db
 from typing import Optional
 from input_handler import read_input
+from collections import defaultdict
 
 load_dotenv()
 
@@ -38,6 +39,24 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+rate_limit = defaultdict(list)
+MAX_ATTEMPTS = 5
+RATE_LIMIT_DURATION = 60  # 1 minute
+
+
+def check_rate_limit(ip_address):
+    now = time.time()
+    request_times = rate_limit[ip_address]
+    request_times = [t for t in request_times if now - t < RATE_LIMIT_DURATION]
+
+    if len(request_times) >= MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429, detail="Too many attempts. Please try again later."
+        )
+
+    request_times.append(now)
+    rate_limit[ip_address] = request_times
 
 
 class Token(BaseModel):
@@ -66,6 +85,16 @@ class PinRequest(BaseModel):
     label: str
 
 
+class LoginCodeAttempt(BaseModel):
+    email: EmailStr
+    login_code: str
+
+
+# Track failed attempts
+failed_attempts = defaultdict(int)
+MAX_FAILED_ATTEMPTS = 3
+
+
 @app.on_event("startup")
 def on_startup():
     db.init_db()
@@ -77,13 +106,15 @@ def send_magic_link(request: LoginRequest):
         "A login code has been sent to your email. Please enter the code below."
     )
 
-    login_code = "".join(random.choices("0123456789", k=6))
+    login_code = "".join(random.choices("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=8))
     hashed_token = utils.hash_secret(login_code)
     email = request.email
 
     user = db.get_user(email)
     if user:
-        db.save_login_code(user.id, hashed_token, int(time.time()) + 3600)
+        db.save_login_code(
+            user.id, hashed_token, int(time.time()) + 900
+        )  # 15 minutes expiration
     else:
         logging.error(f"Login code requested for a non-existing user {email}.")
         return success_message  # for security reasons, we don't want to leak if the user exists
@@ -184,38 +215,67 @@ def logout(
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-class LoginCode(BaseModel):
-    login_code: str
-
-
 @app.post("/auth/exchange-code", response_model=AuthResponse)
-def exchange_code(login_code: LoginCode):
-    if not login_code.login_code:
-        raise HTTPException(status_code=400, detail="Invalid login code")
+def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
+    check_rate_limit(request.client.host)
 
-    user = db.get_user_by_login_code(login_code.login_code)
-    if user:
-        bearer_token = token_urlsafe(16)
-        bearer_token_hashed = utils.hash_secret(bearer_token)
-        db.save_token(
-            user.id, bearer_token_hashed, int(time.time()) + 31536000
-        )  # 1 year expiration
+    email = login_attempt.email
+    login_code = login_attempt.login_code
 
-        # remove login code
-        db.remove_login_code(user.id, login_code.login_code)
+    if not login_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid login code"
+        )
 
-        return {
-            "access_token": bearer_token,
-            "token_type": "bearer",
-            "user": {
-                "apartment_number": user.apartment.number,
-                "email": user.email,
-                "name": user.name,
-                "role": user.role,
-            },
-        }
+    user = db.get_user_by_login_code(login_code)
+    if not user or user.email != email:
+        # Use a generic error message to avoid leaking information about registered emails
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or login code",
+        )
 
-    raise HTTPException(status_code=401, detail="Invalid or expired login code")
+    # Check if the code has expired
+    current_time = int(time.time())
+    stored_code = next(
+        (
+            code
+            for code in user.login_codes
+            if utils.verify_secret(login_code, code.code_hash)
+        ),
+        None,
+    )
+    if not stored_code or current_time > stored_code.expiration:
+        db.remove_login_code(user.id, login_code)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Login code has expired. Please request a new one.",
+        )
+
+    # Code is valid, reset failed attempts
+    if email in failed_attempts:
+        del failed_attempts[email]
+
+    # Generate and save new bearer token
+    bearer_token = token_urlsafe(16)
+    bearer_token_hashed = utils.hash_secret(bearer_token)
+    db.save_token(
+        user.id, bearer_token_hashed, int(time.time()) + 31536000
+    )  # 1 year expiration
+
+    # Remove the used login code
+    db.remove_login_code(user.id, login_code)
+
+    return {
+        "access_token": bearer_token,
+        "token_type": "bearer",
+        "user": {
+            "apartment_number": user.apartment.number,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+        },
+    }
 
 
 @app.post("/door/unlock")
