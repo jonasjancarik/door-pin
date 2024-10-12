@@ -16,6 +16,9 @@ import db
 from typing import Optional
 from input_handler import read_input
 from collections import defaultdict
+from contextlib import asynccontextmanager
+from datetime import date, time
+from typing import List
 
 load_dotenv()
 
@@ -26,7 +29,14 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = ["*"]
 
@@ -90,14 +100,23 @@ class LoginCodeAttempt(BaseModel):
     login_code: str
 
 
+class RecurringScheduleRequest(BaseModel):
+    user_id: int
+    day_of_week: int
+    start_time: time
+    end_time: time
+
+
+class OneTimeAccessRequest(BaseModel):
+    user_id: int
+    access_date: date
+    start_time: time
+    end_time: time
+
+
 # Track failed attempts
 failed_attempts = defaultdict(int)
 MAX_FAILED_ATTEMPTS = 3
-
-
-@app.on_event("startup")
-def on_startup():
-    db.init_db()
 
 
 @app.post("/auth/send-magic-link")
@@ -237,15 +256,7 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
 
     # Check if the code has expired
     current_time = int(time.time())
-    stored_code = next(
-        (
-            code
-            for code in user.login_codes
-            if utils.verify_secret(login_code, code.code_hash)
-        ),
-        None,
-    )
-    if not stored_code or current_time > stored_code.expiration:
+    if db.is_login_code_expired(user.id, login_code, current_time):
         db.remove_login_code(user.id, login_code)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -628,6 +639,157 @@ def delete_apartment(apartment_id: int, user: db.User = Depends(authenticate_use
     if db.remove_apartment(apartment_id):
         return {"status": "Apartment deleted successfully"}
     raise HTTPException(status_code=404, detail="Apartment not found")
+
+
+@app.post("/guest/schedule/recurring/create")
+def create_recurring_schedule(
+    schedule: RecurringScheduleRequest,
+    current_user: db.User = Depends(authenticate_user),
+):
+    if current_user.role not in ["admin", "apartment_admin"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    guest_user = db.get_user(schedule.user_id)
+    if not guest_user or guest_user.role != "guest":
+        raise HTTPException(status_code=400, detail="Invalid guest user")
+
+    if (
+        current_user.role == "apartment_admin"
+        and guest_user.apartment_id != current_user.apartment_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot modify schedule for guests from other apartments",
+        )
+
+    new_schedule = db.add_recurring_guest_schedule(
+        schedule.user_id, schedule.day_of_week, schedule.start_time, schedule.end_time
+    )
+    return {"status": "Recurring schedule created", "schedule_id": new_schedule.id}
+
+
+@app.post("/guest/access/one-time/create")
+def create_one_time_access(
+    access: OneTimeAccessRequest,
+    current_user: db.User = Depends(authenticate_user),
+):
+    if current_user.role not in ["admin", "apartment_admin"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    guest_user = db.get_user(access.user_id)
+    if not guest_user or guest_user.role != "guest":
+        raise HTTPException(status_code=400, detail="Invalid guest user")
+
+    if (
+        current_user.role == "apartment_admin"
+        and guest_user.apartment_id != current_user.apartment_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot modify access for guests from other apartments",
+        )
+
+    new_access = db.add_one_time_guest_access(
+        access.user_id, access.access_date, access.start_time, access.end_time
+    )
+    return {"status": "One-time access created", "access_id": new_access.id}
+
+
+@app.get("/guest/schedule/list")
+def list_guest_schedules(
+    user_id: int = Query(..., description="ID of the guest user"),
+    current_user: db.User = Depends(authenticate_user),
+):
+    if (
+        current_user.role not in ["admin", "apartment_admin"]
+        and current_user.id != user_id
+    ):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    guest_user = db.get_user(user_id)
+    if not guest_user or guest_user.role != "guest":
+        raise HTTPException(status_code=400, detail="Invalid guest user")
+
+    if (
+        current_user.role == "apartment_admin"
+        and guest_user.apartment_id != current_user.apartment_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot view schedules for guests from other apartments",
+        )
+
+    recurring_schedules = db.get_user_recurring_schedules(user_id)
+    one_time_access = db.get_user_one_time_access(user_id)
+
+    return {
+        "recurring_schedules": [
+            {
+                "id": schedule.id,
+                "day_of_week": schedule.day_of_week,
+                "start_time": schedule.start_time.isoformat(),
+                "end_time": schedule.end_time.isoformat(),
+            }
+            for schedule in recurring_schedules
+        ],
+        "one_time_access": [
+            {
+                "id": access.id,
+                "access_date": access.access_date.isoformat(),
+                "start_time": access.start_time.isoformat(),
+                "end_time": access.end_time.isoformat(),
+            }
+            for access in one_time_access
+        ],
+    }
+
+
+@app.delete("/guest/schedule/recurring/delete/{schedule_id}")
+def delete_recurring_schedule(
+    schedule_id: int, current_user: db.User = Depends(authenticate_user)
+):
+    if current_user.role not in ["admin", "apartment_admin"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    schedule = db.get_recurring_guest_schedule(schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    if current_user.role == "apartment_admin":
+        guest_user = db.get_user(schedule.user_id)
+        if guest_user.apartment_id != current_user.apartment_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot remove schedules for guests from other apartments",
+            )
+
+    if db.remove_recurring_guest_schedule(schedule_id):
+        return {"status": "Recurring schedule deleted successfully"}
+    raise HTTPException(status_code=500, detail="Failed to delete recurring schedule")
+
+
+@app.delete("/guest/access/one-time/delete/{access_id}")
+def delete_one_time_access(
+    access_id: int, current_user: db.User = Depends(authenticate_user)
+):
+    if current_user.role not in ["admin", "apartment_admin"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    access = db.get_one_time_guest_access(access_id)
+    if not access:
+        raise HTTPException(status_code=404, detail="One-time access not found")
+
+    if current_user.role == "apartment_admin":
+        guest_user = db.get_user(access.user_id)
+        if guest_user.apartment_id != current_user.apartment_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot remove access for guests from other apartments",
+            )
+
+    if db.remove_one_time_guest_access(access_id):
+        return {"status": "One-time access deleted successfully"}
+    raise HTTPException(status_code=500, detail="Failed to delete one-time access")
 
 
 if __name__ == "__main__":

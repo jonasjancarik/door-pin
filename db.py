@@ -10,8 +10,10 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     DateTime,
+    Date,
+    Time,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship, joinedload
 from contextlib import contextmanager
 import utils
 from dotenv import load_dotenv
@@ -74,6 +76,8 @@ class User(Base):
     rfids = relationship("Rfid", back_populates="user", foreign_keys="[Rfid.user_id]")
     tokens = relationship("Token", back_populates="user")
     login_codes = relationship("LoginCode", back_populates="user")
+    recurring_schedules = relationship("RecurringGuestSchedule", back_populates="user")
+    one_time_access = relationship("OneTimeGuestAccess", back_populates="user")
 
 
 @add_getitem
@@ -121,6 +125,28 @@ class LoginCode(Base):
     code_hash = Column(String, nullable=False)
     expiration = Column(Integer, nullable=False)
     user = relationship("User", back_populates="login_codes", lazy="joined")
+
+
+@add_getitem
+class RecurringGuestSchedule(Base):
+    __tablename__ = "recurring_guest_schedules"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    day_of_week = Column(Integer)  # 0 for Monday, 6 for Sunday
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    user = relationship("User", back_populates="recurring_schedules")
+
+
+@add_getitem
+class OneTimeGuestAccess(Base):
+    __tablename__ = "one_time_guest_access"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    access_date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    user = relationship("User", back_populates="one_time_access")
 
 
 def init_db():
@@ -264,10 +290,24 @@ def get_user_by_login_code(login_code):
             .filter(
                 LoginCode.code_hash == code_hash, LoginCode.expiration > current_time
             )
+            .options(joinedload(User.apartment))
             .first()
         )
 
         return user
+
+
+def is_login_code_expired(user_id, login_code, current_time):
+    code_hash = utils.hash_secret(login_code)
+
+    with get_db() as db:
+        login_code = (
+            db.query(LoginCode)
+            .filter(LoginCode.user_id == user_id, LoginCode.code_hash == code_hash)
+            .first()
+        )
+
+        return login_code is None or current_time > login_code.expiration
 
 
 def remove_login_code(user_id, login_code):
@@ -451,3 +491,122 @@ def get_apartment_rfids(apartment_id):
 def get_user_rfids(user_id):
     with get_db() as db:
         return db.query(Rfid).filter(Rfid.user_id == user_id).all()
+
+
+def add_recurring_guest_schedule(user_id, day_of_week, start_time, end_time):
+    with get_db() as db:
+        new_schedule = RecurringGuestSchedule(
+            user_id=user_id,
+            day_of_week=day_of_week,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        db.add(new_schedule)
+        db.commit()
+        db.refresh(new_schedule)
+        logger.info(f"Recurring guest schedule added for user {user_id}")
+        return new_schedule
+
+
+def add_one_time_guest_access(user_id, access_date, start_time, end_time):
+    with get_db() as db:
+        new_access = OneTimeGuestAccess(
+            user_id=user_id,
+            access_date=access_date,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        db.add(new_access)
+        db.commit()
+        db.refresh(new_access)
+        logger.info(f"One-time guest access added for user {user_id}")
+        return new_access
+
+
+def get_user_recurring_schedules(user_id):
+    with get_db() as db:
+        return (
+            db.query(RecurringGuestSchedule)
+            .filter(RecurringGuestSchedule.user_id == user_id)
+            .all()
+        )
+
+
+def get_user_one_time_access(user_id):
+    with get_db() as db:
+        return (
+            db.query(OneTimeGuestAccess)
+            .filter(OneTimeGuestAccess.user_id == user_id)
+            .all()
+        )
+
+
+def remove_recurring_guest_schedule(schedule_id):
+    with get_db() as db:
+        schedule = (
+            db.query(RecurringGuestSchedule)
+            .filter(RecurringGuestSchedule.id == schedule_id)
+            .first()
+        )
+        if schedule:
+            db.delete(schedule)
+            db.commit()
+            logger.info(f"Recurring guest schedule {schedule_id} removed")
+            return True
+        return False
+
+
+def remove_one_time_guest_access(access_id):
+    with get_db() as db:
+        access = (
+            db.query(OneTimeGuestAccess)
+            .filter(OneTimeGuestAccess.id == access_id)
+            .first()
+        )
+        if access:
+            db.delete(access)
+            db.commit()
+            logger.info(f"One-time guest access {access_id} removed")
+            return True
+        return False
+
+
+def is_guest_allowed_access(user_id):
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and user.role == "guest":
+            now = datetime.datetime.now()
+            current_time = now.time()
+            current_date = now.date()
+            current_day = now.weekday()
+
+            # Check recurring schedule
+            recurring_access = (
+                db.query(RecurringGuestSchedule)
+                .filter(
+                    RecurringGuestSchedule.user_id == user_id,
+                    RecurringGuestSchedule.day_of_week == current_day,
+                    RecurringGuestSchedule.start_time <= current_time,
+                    RecurringGuestSchedule.end_time >= current_time,
+                )
+                .first()
+            )
+
+            if recurring_access:
+                return True
+
+            # Check one-time access
+            one_time_access = (
+                db.query(OneTimeGuestAccess)
+                .filter(
+                    OneTimeGuestAccess.user_id == user_id,
+                    OneTimeGuestAccess.access_date == current_date,
+                    OneTimeGuestAccess.start_time <= current_time,
+                    OneTimeGuestAccess.end_time >= current_time,
+                )
+                .first()
+            )
+
+            return one_time_access is not None
+
+        return True  # Non-guest users are always allowed access
