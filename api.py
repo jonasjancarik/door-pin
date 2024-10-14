@@ -5,7 +5,7 @@ import boto3
 import logging
 from botocore.exceptions import ClientError, EndpointConnectionError
 from fastapi import FastAPI, HTTPException, Depends, Request, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.security import OAuth2PasswordBearer
@@ -240,7 +240,7 @@ def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
     raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-@app.post("/auth/verify")
+@app.post("/auth/verify", status_code=status.HTTP_200_OK)
 def verify_authentication(user: db.User = Depends(authenticate_user)):
     return {"status": "authenticated", "user": user}
 
@@ -252,7 +252,7 @@ def get_current_token(request: Request) -> str:
     return authorization.replace("Bearer ", "")
 
 
-@app.delete("/auth/tokens/current")
+@app.delete("/auth/tokens/current", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     user: db.User = Depends(authenticate_user),
     current_token: str = Depends(get_current_token),
@@ -266,12 +266,14 @@ def logout(
                 token for token in tokens if token.token_hash == current_token
             )
             db.delete_token(token_to_remove.id)
-            return {"status": "logged out"}
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    raise APIException(status_code=401, detail="Unauthorized")
+    raise APIException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
 
-@app.post("/auth/tokens", response_model=AuthResponse)
+@app.post(
+    "/auth/tokens", response_model=AuthResponse, status_code=status.HTTP_201_CREATED
+)
 def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     check_rate_limit(request.client.host)
 
@@ -325,7 +327,7 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     }
 
 
-@app.post("/doors/unlock")
+@app.post("/doors/unlock", status_code=status.HTTP_200_OK)
 def unlock_door(_: db.User = Depends(authenticate_user)):
     utils.unlock_door()
     return {"message": "Door unlocked successfully"}
@@ -387,7 +389,7 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
     }
 
 
-@app.get("/users")
+@app.get("/users", status_code=status.HTTP_200_OK)
 def list_users(current_user: db.User = Depends(authenticate_user)):
     if current_user.role == "admin":
         users = db.get_all_users()
@@ -408,7 +410,7 @@ def list_users(current_user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.put("/users/{user_id}")
+@app.put("/users/{user_id}", status_code=status.HTTP_200_OK)
 def update_user(
     user_id: int, updated_user: dict, current_user: db.User = Depends(authenticate_user)
 ):
@@ -422,16 +424,16 @@ def update_user(
     return {"status": "User updated successfully"}
 
 
-@app.delete("/users/{user_id}")
+@app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
     if db.remove_user(user_id):
-        return {"status": "User deleted successfully"}
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     raise APIException(status_code=404, detail="User not found")
 
 
-@app.post("/rfids")
+@app.post("/rfids", status_code=status.HTTP_201_CREATED)
 def create_rfid(
     rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
 ):
@@ -459,7 +461,7 @@ def create_rfid(
     }
 
 
-@app.get("/rfids/read")
+@app.get("/rfids/read", status_code=status.HTTP_200_OK)
 async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
@@ -474,16 +476,16 @@ async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
         raise APIException(status_code=500, detail=f"Error reading RFID: {str(e)}")
 
 
-@app.delete("/rfids/{user_id}/{hashed_uuid}")
+@app.delete("/rfids/{user_id}/{hashed_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_rfid(
     user_id: int, hashed_uuid: str, user: db.User = Depends(authenticate_user)
 ):
     if db.delete_rfid(user_id, hashed_uuid):
-        return {"status": "RFID deleted"}
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     raise APIException(status_code=404, detail="RFID not found")
 
 
-@app.get("/rfids")
+@app.get("/rfids", status_code=status.HTTP_200_OK)
 def list_rfids(current_user: db.User = Depends(authenticate_user)):
     if current_user.role == "admin":
         rfids = db.get_all_rfids()
@@ -505,7 +507,7 @@ def list_rfids(current_user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.get("/users/{user_id}/rfids")
+@app.get("/users/{user_id}/rfids", status_code=status.HTTP_200_OK)
 def list_user_rfids(
     user_id: int = Query(..., description="User ID to fetch RFIDs for"),
     current_user: db.User = Depends(authenticate_user),
@@ -533,7 +535,7 @@ def list_user_rfids(
     ]
 
 
-@app.post("/pins")
+@app.post("/pins", status_code=status.HTTP_201_CREATED)
 def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_user)):
     hashed_pin = utils.hash_secret(payload=pin_request.pin)
     user_id = db.get_user(user.email).id
@@ -541,7 +543,7 @@ def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_use
     return {"status": "PIN saved", "pin_id": pin.id}
 
 
-@app.patch("/pins/{pin_id}")
+@app.patch("/pins/{pin_id}", status_code=status.HTTP_200_OK)
 def update_pin(
     pin_id: int, pin_request: PinRequest, user: db.User = Depends(authenticate_user)
 ):
@@ -552,7 +554,7 @@ def update_pin(
     raise APIException(status_code=404, detail="PIN not found")
 
 
-@app.get("/pins")
+@app.get("/pins", status_code=status.HTTP_200_OK)
 def list_pins(current_user: db.User = Depends(authenticate_user)):
     if current_user.role == "admin":
         pins = db.get_all_pins()
@@ -573,7 +575,7 @@ def list_pins(current_user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.get("/users/{user_id}/pins")
+@app.get("/users/{user_id}/pins", status_code=status.HTTP_200_OK)
 def list_user_pins(
     user_id: int = Query(..., description="User ID to fetch pins for"),
     current_user: db.User = Depends(authenticate_user),
@@ -600,7 +602,7 @@ def list_user_pins(
     ]
 
 
-@app.get("/apartments")
+@app.get("/apartments", status_code=status.HTTP_200_OK)
 def list_apartments(user: db.User = Depends(authenticate_user)):
     if user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
@@ -615,7 +617,7 @@ def list_apartments(user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.post("/apartments")
+@app.post("/apartments", status_code=status.HTTP_201_CREATED)
 def create_apartment(apartment: dict, user: db.User = Depends(authenticate_user)):
     if user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
@@ -627,7 +629,7 @@ def create_apartment(apartment: dict, user: db.User = Depends(authenticate_user)
     }
 
 
-@app.put("/apartments/{apartment_id}")
+@app.put("/apartments/{apartment_id}", status_code=status.HTTP_200_OK)
 def update_apartment(
     apartment_id: int,
     updated_apartment: dict,
@@ -645,16 +647,16 @@ def update_apartment(
     raise APIException(status_code=404, detail="Apartment not found")
 
 
-@app.delete("/apartments/{apartment_id}")
+@app.delete("/apartments/{apartment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_apartment(apartment_id: int, user: db.User = Depends(authenticate_user)):
     if user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
     if db.remove_apartment(apartment_id):
-        return {"status": "Apartment deleted successfully"}
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     raise APIException(status_code=404, detail="Apartment not found")
 
 
-@app.post("/guests/{user_id}/recurring-schedules")
+@app.post("/guests/{user_id}/recurring-schedules", status_code=status.HTTP_201_CREATED)
 def create_recurring_schedule(
     user_id: int,
     schedule: RecurringScheduleRequest,
@@ -682,7 +684,7 @@ def create_recurring_schedule(
     return {"status": "Recurring schedule created", "schedule_id": new_schedule.id}
 
 
-@app.post("/guests/{user_id}/one-time-accesses")
+@app.post("/guests/{user_id}/one-time-accesses", status_code=status.HTTP_201_CREATED)
 def create_one_time_access(
     user_id: int,
     access: OneTimeAccessRequest,
@@ -710,7 +712,7 @@ def create_one_time_access(
     return {"status": "One-time access created", "access_id": new_access.id}
 
 
-@app.get("/guests/{user_id}/schedules")
+@app.get("/guests/{user_id}/schedules", status_code=status.HTTP_200_OK)
 def list_guest_schedules(
     user_id: int,
     current_user: db.User = Depends(authenticate_user),
@@ -759,7 +761,9 @@ def list_guest_schedules(
     }
 
 
-@app.delete("/guests/recurring-schedules/{schedule_id}")
+@app.delete(
+    "/guests/recurring-schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_recurring_schedule(
     schedule_id: int, current_user: db.User = Depends(authenticate_user)
 ):
@@ -779,11 +783,13 @@ def delete_recurring_schedule(
             )
 
     if db.remove_recurring_guest_schedule(schedule_id):
-        return {"status": "Recurring schedule deleted successfully"}
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     raise APIException(status_code=500, detail="Failed to delete recurring schedule")
 
 
-@app.delete("/guests/one-time-accesses/{access_id}")
+@app.delete(
+    "/guests/one-time-accesses/{access_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_one_time_access(
     access_id: int, current_user: db.User = Depends(authenticate_user)
 ):
@@ -803,7 +809,7 @@ def delete_one_time_access(
             )
 
     if db.remove_one_time_guest_access(access_id):
-        return {"status": "One-time access deleted successfully"}
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     raise APIException(status_code=500, detail="Failed to delete one-time access")
 
 
