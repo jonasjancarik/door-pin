@@ -1,7 +1,6 @@
 import db
 import csv
 import os
-import sqlalchemy.exc as sqlalchemy_exc
 
 # Initialize the database
 db.init_db()

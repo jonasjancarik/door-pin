@@ -7,7 +7,6 @@ from sqlalchemy import (
     Column,
     Integer,
     String,
-    Boolean,
     ForeignKey,
     DateTime,
     Date,
@@ -128,8 +127,8 @@ class LoginCode(Base):
 
 
 @add_getitem
-class RecurringGuestSchedule(Base):
-    __tablename__ = "recurring_guest_schedules"
+class RecurringSchedule(Base):
+    __tablename__ = "recurring_schedules"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     day_of_week = Column(Integer)  # 0 for Monday, 6 for Sunday
@@ -139,8 +138,8 @@ class RecurringGuestSchedule(Base):
 
 
 @add_getitem
-class OneTimeGuestAccess(Base):
-    __tablename__ = "one_time_guest_access"
+class OneTimeAccesses(Base):
+    __tablename__ = "one_time_accesses"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     access_date = Column(Date, nullable=False)
@@ -231,6 +230,17 @@ def update_user_tokens(email, tokens):
         return None
 
 
+def delete_token(token_id):
+    with get_db() as db:
+        token = db.query(Token).filter(Token.id == token_id).first()
+        if token:
+            db.delete(token)
+            db.commit()
+            logger.info(f"Token {token_id} deleted")
+            return True
+        return False
+
+
 def update_user_login_codes(email, login_codes):
     with get_db() as db:
         user = db.query(User).filter(User.email == email).first()
@@ -259,7 +269,7 @@ def save_rfid(user_id, hashed_uuid, last_four_digits, label):
         return new_rfid
 
 
-def remove_rfid(id):
+def delete_rfid(id):
     with get_db() as db:
         if rfid := db.query(Rfid).filter(Rfid.id == id).first():
             db.delete(rfid)
@@ -463,11 +473,6 @@ def remove_apartment(apartment_id):
         return False
 
 
-def get_all_pins():
-    with get_db() as db:
-        return db.query(Pin).all()
-
-
 def get_apartment_pins(apartment_id):
     with get_db() as db:
         return db.query(Pin).join(User).filter(User.apartment_id == apartment_id).all()
@@ -476,11 +481,6 @@ def get_apartment_pins(apartment_id):
 def get_user_pins(user_id):
     with get_db() as db:
         return db.query(Pin).filter(Pin.user_id == user_id).all()
-
-
-def get_all_rfids():
-    with get_db() as db:
-        return db.query(Rfid).all()
 
 
 def get_apartment_rfids(apartment_id):
@@ -493,9 +493,9 @@ def get_user_rfids(user_id):
         return db.query(Rfid).filter(Rfid.user_id == user_id).all()
 
 
-def add_recurring_guest_schedule(user_id, day_of_week, start_time, end_time):
+def add_recurring_schedule(user_id, day_of_week, start_time, end_time):
     with get_db() as db:
-        new_schedule = RecurringGuestSchedule(
+        new_schedule = RecurringSchedule(
             user_id=user_id,
             day_of_week=day_of_week,
             start_time=start_time,
@@ -508,9 +508,9 @@ def add_recurring_guest_schedule(user_id, day_of_week, start_time, end_time):
         return new_schedule
 
 
-def add_one_time_guest_access(user_id, access_date, start_time, end_time):
+def add_one_time_access(user_id, access_date, start_time, end_time):
     with get_db() as db:
-        new_access = OneTimeGuestAccess(
+        new_access = OneTimeAccesses(
             user_id=user_id,
             access_date=access_date,
             start_time=start_time,
@@ -523,29 +523,41 @@ def add_one_time_guest_access(user_id, access_date, start_time, end_time):
         return new_access
 
 
-def get_user_recurring_schedules(user_id):
+def get_one_time_accesses_by_user(user_id):
     with get_db() as db:
         return (
-            db.query(RecurringGuestSchedule)
-            .filter(RecurringGuestSchedule.user_id == user_id)
+            db.query(OneTimeAccesses).filter(OneTimeAccesses.user_id == user_id).all()
+        )
+
+
+def get_recurring_schedules_by_user(user_id):
+    with get_db() as db:
+        return (
+            db.query(RecurringSchedule)
+            .filter(RecurringSchedule.user_id == user_id)
             .all()
         )
 
 
-def get_user_one_time_access(user_id):
+def get_recurring_schedule(schedule_id):
     with get_db() as db:
         return (
-            db.query(OneTimeGuestAccess)
-            .filter(OneTimeGuestAccess.user_id == user_id)
-            .all()
+            db.query(RecurringSchedule)
+            .filter(RecurringSchedule.id == schedule_id)
+            .first()
         )
 
 
-def remove_recurring_guest_schedule(schedule_id):
+def get_one_time_access(access_id):
+    with get_db() as db:
+        return db.query(OneTimeAccesses).filter(OneTimeAccesses.id == access_id).first()
+
+
+def remove_recurring_schedule(schedule_id):
     with get_db() as db:
         schedule = (
-            db.query(RecurringGuestSchedule)
-            .filter(RecurringGuestSchedule.id == schedule_id)
+            db.query(RecurringSchedule)
+            .filter(RecurringSchedule.id == schedule_id)
             .first()
         )
         if schedule:
@@ -556,12 +568,10 @@ def remove_recurring_guest_schedule(schedule_id):
         return False
 
 
-def remove_one_time_guest_access(access_id):
+def remove_one_time_access(access_id):
     with get_db() as db:
         access = (
-            db.query(OneTimeGuestAccess)
-            .filter(OneTimeGuestAccess.id == access_id)
-            .first()
+            db.query(OneTimeAccesses).filter(OneTimeAccesses.id == access_id).first()
         )
         if access:
             db.delete(access)
@@ -571,7 +581,7 @@ def remove_one_time_guest_access(access_id):
         return False
 
 
-def is_guest_allowed_access(user_id):
+def is_user_allowed_access(user_id):
     with get_db() as db:
         user = db.query(User).filter(User.id == user_id).first()
         if user and user.role == "guest":
@@ -582,12 +592,12 @@ def is_guest_allowed_access(user_id):
 
             # Check recurring schedule
             recurring_access = (
-                db.query(RecurringGuestSchedule)
+                db.query(RecurringSchedule)
                 .filter(
-                    RecurringGuestSchedule.user_id == user_id,
-                    RecurringGuestSchedule.day_of_week == current_day,
-                    RecurringGuestSchedule.start_time <= current_time,
-                    RecurringGuestSchedule.end_time >= current_time,
+                    RecurringSchedule.user_id == user_id,
+                    RecurringSchedule.day_of_week == current_day,
+                    RecurringSchedule.start_time <= current_time,
+                    RecurringSchedule.end_time >= current_time,
                 )
                 .first()
             )
@@ -597,12 +607,12 @@ def is_guest_allowed_access(user_id):
 
             # Check one-time access
             one_time_access = (
-                db.query(OneTimeGuestAccess)
+                db.query(OneTimeAccesses)
                 .filter(
-                    OneTimeGuestAccess.user_id == user_id,
-                    OneTimeGuestAccess.access_date == current_date,
-                    OneTimeGuestAccess.start_time <= current_time,
-                    OneTimeGuestAccess.end_time >= current_time,
+                    OneTimeAccesses.user_id == user_id,
+                    OneTimeAccesses.access_date == current_date,
+                    OneTimeAccesses.start_time <= current_time,
+                    OneTimeAccesses.end_time >= current_time,
                 )
                 .first()
             )

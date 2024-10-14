@@ -159,7 +159,7 @@ def main():
                 )
             choice = int(input("Enter the number of the RFID to delete: ")) - 1
             if 0 <= choice < len(rfids):
-                if db.remove_rfid(rfids[choice].id):
+                if db.delete_rfid(rfids[choice].id):
                     print("RFID deleted.")
                 else:
                     print("RFID not found.")

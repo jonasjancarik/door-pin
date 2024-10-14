@@ -20,7 +20,7 @@ from typing import Optional
 from input_handler import read_input
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import date, time
+from datetime import date
 from typing import List
 
 load_dotenv()
@@ -72,13 +72,14 @@ def check_rate_limit(ip_address):
     rate_limit[ip_address] = request_times
 
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
+# Auth models
 class LoginRequest(BaseModel):
     email: EmailStr
+
+
+class LoginCodeAttempt(BaseModel):
+    email: EmailStr
+    login_code: str
 
 
 class AuthResponse(BaseModel):
@@ -87,34 +88,111 @@ class AuthResponse(BaseModel):
     user: dict
 
 
-class RFIDRequest(BaseModel):
+# User models
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    apartment_number: int
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: str
+    apartment_number: int
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str]
+    email: Optional[EmailStr]
+    role: Optional[str]
+    apartment_number: Optional[int]
+
+
+# RFID models
+class RFIDCreate(BaseModel):
     uuid: str
     label: str
     user_email: Optional[EmailStr] = None
 
 
-class PinRequest(BaseModel):
+class RFIDResponse(BaseModel):
+    id: int
+    label: str
+    created_at: str
+    user_id: int
+    user_email: str
+    last_four_digits: str
+
+
+# PIN models
+class PINCreate(BaseModel):
     pin: str
     label: str
 
 
-class LoginCodeAttempt(BaseModel):
-    email: EmailStr
-    login_code: str
-
-
-class RecurringScheduleRequest(BaseModel):
+class PINResponse(BaseModel):
+    id: int
+    label: str
+    created_at: str
     user_id: int
+    user_email: str
+
+
+class PINUpdate(BaseModel):
+    pin: Optional[str]
+    label: Optional[str]
+
+
+# Apartment models
+class ApartmentCreate(BaseModel):
+    number: int
+    description: Optional[str]
+
+
+class ApartmentResponse(BaseModel):
+    id: int
+    number: int
+    description: Optional[str]
+
+
+class ApartmentUpdate(BaseModel):
+    number: Optional[int]
+    description: Optional[str]
+
+
+# Guest schedule models
+class RecurringScheduleCreate(BaseModel):
     day_of_week: int
     start_time: time
     end_time: time
 
 
-class OneTimeAccessRequest(BaseModel):
-    user_id: int
+class OneTimeAccessCreate(BaseModel):
     access_date: date
     start_time: time
     end_time: time
+
+
+class RecurringScheduleResponse(BaseModel):
+    id: int
+    day_of_week: int
+    start_time: str
+    end_time: str
+
+
+class OneTimeAccessResponse(BaseModel):
+    id: int
+    access_date: str
+    start_time: str
+    end_time: str
+
+
+class GuestSchedulesResponse(BaseModel):
+    recurring_schedules: List[RecurringScheduleResponse]
+    one_time_access: List[OneTimeAccessResponse]
 
 
 # Track failed attempts
@@ -192,7 +270,7 @@ def send_magic_link(request: LoginRequest):
 
     try:
         ses_client = boto3.client("ses", region_name=aws_region)
-    except Exception as e:
+    except Exception:
         raise APIException(status_code=500, detail="Failed to initialize email service")
 
     sender = os.getenv("AWS_SES_SENDER_EMAIL")
@@ -435,7 +513,7 @@ def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)
 
 @app.post("/rfids", status_code=status.HTTP_201_CREATED)
 def create_rfid(
-    rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
+    rfid_request: RFIDCreate, current_user: db.User = Depends(authenticate_user)
 ):
     hashed_uuid = utils.hash_secret(payload=rfid_request.uuid)
     last_four_digits = rfid_request.uuid[-4:]
@@ -536,7 +614,7 @@ def list_user_rfids(
 
 
 @app.post("/pins", status_code=status.HTTP_201_CREATED)
-def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_user)):
+def create_pin(pin_request: PINCreate, user: db.User = Depends(authenticate_user)):
     hashed_pin = utils.hash_secret(payload=pin_request.pin)
     user_id = db.get_user(user.email).id
     pin = db.save_pin(user_id, hashed_pin, pin_request.label)
@@ -545,7 +623,7 @@ def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_use
 
 @app.patch("/pins/{pin_id}", status_code=status.HTTP_200_OK)
 def update_pin(
-    pin_id: int, pin_request: PinRequest, user: db.User = Depends(authenticate_user)
+    pin_id: int, pin_request: PINCreate, user: db.User = Depends(authenticate_user)
 ):
     hashed_pin = utils.hash_secret(payload=pin_request.pin)
     pin = db.update_pin(pin_id, hashed_pin, pin_request.label)
@@ -659,7 +737,7 @@ def delete_apartment(apartment_id: int, user: db.User = Depends(authenticate_use
 @app.post("/guests/{user_id}/recurring-schedules", status_code=status.HTTP_201_CREATED)
 def create_recurring_schedule(
     user_id: int,
-    schedule: RecurringScheduleRequest,
+    schedule: RecurringScheduleCreate,
     current_user: db.User = Depends(authenticate_user),
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
@@ -678,7 +756,7 @@ def create_recurring_schedule(
             detail="Cannot modify schedule for guests from other apartments",
         )
 
-    new_schedule = db.add_recurring_guest_schedule(
+    new_schedule = db.add_recurring_schedule(
         user_id, schedule.day_of_week, schedule.start_time, schedule.end_time
     )
     return {"status": "Recurring schedule created", "schedule_id": new_schedule.id}
@@ -687,7 +765,7 @@ def create_recurring_schedule(
 @app.post("/guests/{user_id}/one-time-accesses", status_code=status.HTTP_201_CREATED)
 def create_one_time_access(
     user_id: int,
-    access: OneTimeAccessRequest,
+    access: OneTimeAccessCreate,
     current_user: db.User = Depends(authenticate_user),
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
@@ -706,7 +784,7 @@ def create_one_time_access(
             detail="Cannot modify access for guests from other apartments",
         )
 
-    new_access = db.add_one_time_guest_access(
+    new_access = db.add_one_time_access(
         user_id, access.access_date, access.start_time, access.end_time
     )
     return {"status": "One-time access created", "access_id": new_access.id}
@@ -736,8 +814,8 @@ def list_guest_schedules(
             detail="Cannot view schedules for guests from other apartments",
         )
 
-    recurring_schedules = db.get_user_recurring_schedules(user_id)
-    one_time_access = db.get_user_one_time_access(user_id)
+    recurring_schedules = db.get_recurring_schedules_by_user(user_id)
+    one_time_access = db.get_one_time_accesses_by_user(user_id)
 
     return {
         "recurring_schedules": [
@@ -770,19 +848,20 @@ def delete_recurring_schedule(
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 
-    schedule = db.get_recurring_guest_schedule(schedule_id)
+    schedule = db.get_recurring_schedule(schedule_id)
     if not schedule:
         raise APIException(status_code=404, detail="Schedule not found")
 
     if current_user.role == "apartment_admin":
         guest_user = db.get_user(schedule.user_id)
+
         if guest_user.apartment_id != current_user.apartment_id:
             raise APIException(
                 status_code=403,
                 detail="Cannot remove schedules for guests from other apartments",
             )
 
-    if db.remove_recurring_guest_schedule(schedule_id):
+    if db.remove_recurring_schedule(schedule_id):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     raise APIException(status_code=500, detail="Failed to delete recurring schedule")
 
@@ -796,7 +875,7 @@ def delete_one_time_access(
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 
-    access = db.get_one_time_guest_access(access_id)
+    access = db.get_one_time_access(access_id)
     if not access:
         raise APIException(status_code=404, detail="One-time access not found")
 
@@ -808,7 +887,7 @@ def delete_one_time_access(
                 detail="Cannot remove access for guests from other apartments",
             )
 
-    if db.remove_one_time_guest_access(access_id):
+    if db.remove_one_time_access(access_id):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     raise APIException(status_code=500, detail="Failed to delete one-time access")
 
