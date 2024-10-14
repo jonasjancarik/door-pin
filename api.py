@@ -5,6 +5,9 @@ import boto3
 import logging
 from botocore.exceptions import ClientError, EndpointConnectionError
 from fastapi import FastAPI, HTTPException, Depends, Request, Query, status
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 import utils
@@ -119,7 +122,46 @@ failed_attempts = defaultdict(int)
 MAX_FAILED_ATTEMPTS = 3
 
 
-@app.post("/auth/send-magic-link")
+class APIException(Exception):
+    def __init__(self, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
+
+
+def create_error_response(status_code: int, detail: str, type: str = "APIError"):
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"type": type, "detail": detail, "status_code": status_code}},
+    )
+
+
+@app.exception_handler(APIException)
+async def api_exception_handler(request: Request, exc: APIException):
+    return create_error_response(exc.status_code, exc.detail)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return create_error_response(exc.status_code, exc.detail)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return create_error_response(
+        status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc), "ValidationError"
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    return create_error_response(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "An unexpected error occurred",
+        "InternalServerError",
+    )
+
+
+@app.post("/auth/magic-links", status_code=status.HTTP_202_ACCEPTED)
 def send_magic_link(request: LoginRequest):
     success_message = (
         "A login code has been sent to your email. Please enter the code below."
@@ -146,21 +188,16 @@ def send_magic_link(request: LoginRequest):
 
     aws_region = os.getenv("AWS_REGION")
     if not aws_region:
-        logging.error("AWS_REGION environment variable is not set")
-        raise HTTPException(status_code=500, detail="Server configuration error")
+        raise APIException(status_code=500, detail="Server configuration error")
 
     try:
         ses_client = boto3.client("ses", region_name=aws_region)
     except Exception as e:
-        logging.error(f"Failed to create SES client: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Failed to initialize email service"
-        )
+        raise APIException(status_code=500, detail="Failed to initialize email service")
 
     sender = os.getenv("AWS_SES_SENDER_EMAIL")
     if not sender:
-        logging.error("AWS_SES_SENDER_EMAIL environment variable is not set")
-        raise HTTPException(status_code=500, detail="Server configuration error")
+        raise APIException(status_code=500, detail="Server configuration error")
 
     subject = "Your Login Code"
     body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='{url_to_use}?login_code={login_code}'>Log In</a></p></center></body></html>"""
@@ -179,19 +216,19 @@ def send_magic_link(request: LoginRequest):
         return success_message
     except EndpointConnectionError as e:
         logging.error(f"Failed to connect to AWS SES endpoint: {str(e)}")
-        raise HTTPException(
+        raise APIException(
             status_code=500,
             detail="Failed to connect to email service. Please check your AWS region configuration.",
         )
     except ClientError as e:
         logging.error(f"Failed to send email: {str(e)}")
-        raise HTTPException(
+        raise APIException(
             status_code=500,
             detail="Failed to send email. Please check your AWS SES configuration.",
         )
     except Exception as e:
         logging.error(f"Unexpected error while sending email: {str(e)}")
-        raise HTTPException(
+        raise APIException(
             status_code=500,
             detail="An unexpected error occurred while sending the email.",
         )
@@ -215,7 +252,7 @@ def get_current_token(request: Request) -> str:
     return authorization.replace("Bearer ", "")
 
 
-@app.post("/auth/logout")
+@app.delete("/auth/tokens/current")
 def logout(
     user: db.User = Depends(authenticate_user),
     current_token: str = Depends(get_current_token),
@@ -231,10 +268,10 @@ def logout(
             db.delete_token(token_to_remove.id)
             return {"status": "logged out"}
 
-    raise HTTPException(status_code=401, detail="Unauthorized")
+    raise APIException(status_code=401, detail="Unauthorized")
 
 
-@app.post("/auth/exchange-code", response_model=AuthResponse)
+@app.post("/auth/tokens", response_model=AuthResponse)
 def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     check_rate_limit(request.client.host)
 
@@ -242,14 +279,13 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     login_code = login_attempt.login_code
 
     if not login_code:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid login code"
         )
 
     user = db.get_user_by_login_code(login_code)
     if not user or user.email != email:
-        # Use a generic error message to avoid leaking information about registered emails
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or login code",
         )
@@ -258,7 +294,7 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     current_time = int(time.time())
     if db.is_login_code_expired(user.id, login_code, current_time):
         db.remove_login_code(user.id, login_code)
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Login code has expired. Please request a new one.",
         )
@@ -289,47 +325,47 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     }
 
 
-@app.post("/door/unlock")
+@app.post("/doors/unlock")
 def unlock_door(_: db.User = Depends(authenticate_user)):
     utils.unlock_door()
     return {"message": "Door unlocked successfully"}
 
 
-@app.post("/users/create", status_code=status.HTTP_201_CREATED)
+@app.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(new_user: dict, current_user: db.User = Depends(authenticate_user)):
     if current_user.role == "guest":
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
         )
 
     if not new_user.get("apartment_number") or not new_user.get("email"):
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing apartment number or email",
         )
 
     if new_user.get("role") == "admin" and current_user.role != "admin":
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create admin users",
         )
 
     apartment = db.get_apartment_by_number(new_user.get("apartment_number"))
     if not apartment:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Apartment with number {new_user.get('apartment_number')} not found",
         )
 
     if apartment.id != current_user.apartment.id and current_user.role != "admin":
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only create users for your own apartment",
         )
 
     existing_user = db.get_user(new_user.get("email"))
     if existing_user:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"User with email {new_user.get('email')} already exists",
         )
@@ -351,24 +387,67 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
     }
 
 
-@app.post("/rfid/create")
+@app.get("/users")
+def list_users(current_user: db.User = Depends(authenticate_user)):
+    if current_user.role == "admin":
+        users = db.get_all_users()
+    elif current_user.role == "apartment_admin":
+        users = db.get_apartment_users(current_user.apartment.id)
+    else:
+        raise APIException(status_code=403, detail="Guests cannot list users")
+
+    return [
+        {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "apartment_number": user.apartment.number,
+        }
+        for user in users
+    ]
+
+
+@app.put("/users/{user_id}")
+def update_user(
+    user_id: int, updated_user: dict, current_user: db.User = Depends(authenticate_user)
+):
+    if current_user.role != "admin":
+        raise APIException(status_code=403, detail="Admin access required")
+    user = db.get_user(user_id)
+    if not user:
+        raise APIException(status_code=404, detail="User not found")
+    updated_user["id"] = user_id
+    db.save_user(updated_user)
+    return {"status": "User updated successfully"}
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)):
+    if current_user.role != "admin":
+        raise APIException(status_code=403, detail="Admin access required")
+    if db.remove_user(user_id):
+        return {"status": "User deleted successfully"}
+    raise APIException(status_code=404, detail="User not found")
+
+
+@app.post("/rfids")
 def create_rfid(
     rfid_request: RFIDRequest, current_user: db.User = Depends(authenticate_user)
 ):
     hashed_uuid = utils.hash_secret(payload=rfid_request.uuid)
     last_four_digits = rfid_request.uuid[-4:]
 
-    # If user_email is provided, check if the current user is an admin
     if rfid_request.user_email:
         if current_user.role != "admin":
-            raise HTTPException(
+            raise APIException(
                 status_code=403,
                 detail="Only admin users can create RFIDs for other users",
             )
 
         target_user = db.get_user(rfid_request.user_email)
         if not target_user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise APIException(status_code=404, detail="User not found")
         user_id = target_user.id
     else:
         user_id = current_user.id
@@ -380,38 +459,38 @@ def create_rfid(
     }
 
 
-@app.get("/rfid/read")
+@app.get("/rfids/read")
 async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
         rfid_uuid = await read_input(timeout=timeout if timeout <= 30 else 30)
         if not rfid_uuid:
             logging.warning("RFID not found within the timeout period")
-            raise HTTPException(status_code=404, detail="RFID not found")
+            raise APIException(status_code=404, detail="RFID not found")
         logging.info(f"Successfully read RFID: {rfid_uuid}")
         return {"uuid": rfid_uuid}
     except Exception as e:
         logging.error(f"Error reading RFID: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error reading RFID: {str(e)}")
+        raise APIException(status_code=500, detail=f"Error reading RFID: {str(e)}")
 
 
-@app.delete("/rfid/delete")
+@app.delete("/rfids/{user_id}/{hashed_uuid}")
 def delete_rfid(
     user_id: int, hashed_uuid: str, user: db.User = Depends(authenticate_user)
 ):
     if db.delete_rfid(user_id, hashed_uuid):
         return {"status": "RFID deleted"}
-    raise HTTPException(status_code=404, detail="RFID not found")
+    raise APIException(status_code=404, detail="RFID not found")
 
 
-@app.get("/rfid/list")
+@app.get("/rfids")
 def list_rfids(current_user: db.User = Depends(authenticate_user)):
     if current_user.role == "admin":
         rfids = db.get_all_rfids()
     elif current_user.role == "apartment_admin":
         rfids = db.get_apartment_rfids(current_user.apartment.id)
     else:
-        raise HTTPException(status_code=403, detail="Guests cannot list RFIDs")
+        raise APIException(status_code=403, detail="Guests cannot list RFIDs")
 
     return [
         {
@@ -426,32 +505,22 @@ def list_rfids(current_user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.get("/rfid/list/user")
+@app.get("/users/{user_id}/rfids")
 def list_user_rfids(
-    user_id: Optional[int] = Query(
-        None, description="Optional user ID to fetch RFIDs for"
-    ),
+    user_id: int = Query(..., description="User ID to fetch RFIDs for"),
     current_user: db.User = Depends(authenticate_user),
 ):
-    if user_id is None:
-        # If no user_id is provided, return RFIDs for the current user
-        rfids = db.get_user_rfids(current_user.id)
+    if current_user.role == "admin":
+        rfids = db.get_user_rfids(user_id)
+    elif (
+        current_user.role == "apartment_admin"
+        and current_user.apartment_id == db.get_user(user_id).apartment_id
+    ):
+        rfids = db.get_user_rfids(user_id)
+    elif current_user.id == user_id:
+        rfids = db.get_user_rfids(user_id)
     else:
-        # Check permissions based on user role
-        if current_user.role == "admin":
-            # Admin can get any user's RFIDs
-            rfids = db.get_user_rfids(user_id)
-        elif (
-            current_user.role == "apartment_admin"
-            and current_user.apartment_id == db.get_user(user_id).apartment_id
-        ):
-            # Non-guest users can get RFIDs of users from their apartment
-            rfids = db.get_user_rfids(user_id)
-        elif current_user.id == user_id:
-            # Guests can only get their own RFIDs
-            rfids = db.get_user_rfids(user_id)
-        else:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     return [
         {
@@ -464,7 +533,7 @@ def list_user_rfids(
     ]
 
 
-@app.post("/pin/create")
+@app.post("/pins")
 def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_user)):
     hashed_pin = utils.hash_secret(payload=pin_request.pin)
     user_id = db.get_user(user.email).id
@@ -472,9 +541,7 @@ def create_pin(pin_request: PinRequest, user: db.User = Depends(authenticate_use
     return {"status": "PIN saved", "pin_id": pin.id}
 
 
-@app.post(
-    "/pin/update/{pin_id}"
-)  # todo: this should serve to update the pin label only
+@app.patch("/pins/{pin_id}")
 def update_pin(
     pin_id: int, pin_request: PinRequest, user: db.User = Depends(authenticate_user)
 ):
@@ -482,17 +549,17 @@ def update_pin(
     pin = db.update_pin(pin_id, hashed_pin, pin_request.label)
     if pin:
         return {"status": "PIN updated", "pin_id": pin.id}
-    raise HTTPException(status_code=404, detail="PIN not found")
+    raise APIException(status_code=404, detail="PIN not found")
 
 
-@app.get("/pin/list")
+@app.get("/pins")
 def list_pins(current_user: db.User = Depends(authenticate_user)):
     if current_user.role == "admin":
         pins = db.get_all_pins()
     elif current_user.role == "apartment_admin":
         pins = db.get_apartment_pins(current_user.apartment.id)
     else:
-        raise HTTPException(status_code=403, detail="Guests cannot list PINs")
+        raise APIException(status_code=403, detail="Guests cannot list PINs")
 
     return [
         {
@@ -506,32 +573,22 @@ def list_pins(current_user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.get("/pin/list/user")
+@app.get("/users/{user_id}/pins")
 def list_user_pins(
-    user_id: Optional[int] = Query(
-        None, description="Optional user ID to fetch pins for"
-    ),
+    user_id: int = Query(..., description="User ID to fetch pins for"),
     current_user: db.User = Depends(authenticate_user),
 ):
-    if user_id is None:
-        # If no user_id is provided, return pins for the current user
-        pins = db.get_user_pins(current_user.id)
+    if current_user.role == "admin":
+        pins = db.get_user_pins(user_id)
+    elif (
+        current_user.role == "apartment_admin"
+        and current_user.apartment_id == db.get_user(user_id).apartment_id
+    ):
+        pins = db.get_user_pins(user_id)
+    elif current_user.id == user_id:
+        pins = db.get_user_pins(user_id)
     else:
-        # Check permissions based on user role
-        if current_user.role == "admin":
-            # Admin can get any user's pins
-            pins = db.get_user_pins(user_id)
-        elif (
-            current_user.role == "apartment_admin"
-            and current_user.apartment_id == db.get_user(user_id).apartment_id
-        ):
-            # Non-guest users can get pins of users from their apartment
-            pins = db.get_user_pins(user_id)
-        elif current_user.id == user_id:
-            # Guests can only get their own pins
-            pins = db.get_user_pins(user_id)
-        else:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     return [
         {
@@ -543,54 +600,10 @@ def list_user_pins(
     ]
 
 
-@app.get("/users/list")
-def list_users(current_user: db.User = Depends(authenticate_user)):
-    if current_user.role == "admin":
-        users = db.get_all_users()
-    elif current_user.role == "apartment_admin":
-        users = db.get_apartment_users(current_user.apartment.id)
-    else:
-        raise HTTPException(status_code=403, detail="Guests cannot list users")
-
-    return [
-        {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email,
-            "role": user.role,
-            "apartment_number": user.apartment.number,
-        }
-        for user in users
-    ]
-
-
-@app.put("/users/update/{user_id}")
-def update_user(
-    user_id: int, updated_user: dict, current_user: db.User = Depends(authenticate_user)
-):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    user = db.get_user(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    updated_user["id"] = user_id
-    db.save_user(updated_user)
-    return {"status": "User updated successfully"}
-
-
-@app.delete("/users/delete/{user_id}")
-def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    if db.remove_user(user_id):
-        return {"status": "User deleted successfully"}
-    raise HTTPException(status_code=404, detail="User not found")
-
-
-@app.get("/apartments/list")
+@app.get("/apartments")
 def list_apartments(user: db.User = Depends(authenticate_user)):
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+        raise APIException(status_code=403, detail="Admin access required")
     apartments = db.get_all_apartments()
     return [
         {
@@ -602,10 +615,10 @@ def list_apartments(user: db.User = Depends(authenticate_user)):
     ]
 
 
-@app.post("/apartments/create")
+@app.post("/apartments")
 def create_apartment(apartment: dict, user: db.User = Depends(authenticate_user)):
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+        raise APIException(status_code=403, detail="Admin access required")
     new_apartment = db.add_apartment(apartment["number"], apartment.get("description"))
     return {
         "id": new_apartment.id,
@@ -614,14 +627,14 @@ def create_apartment(apartment: dict, user: db.User = Depends(authenticate_user)
     }
 
 
-@app.put("/apartments/update/{apartment_id}")
+@app.put("/apartments/{apartment_id}")
 def update_apartment(
     apartment_id: int,
     updated_apartment: dict,
     user: db.User = Depends(authenticate_user),
 ):
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+        raise APIException(status_code=403, detail="Admin access required")
     apartment = db.update_apartment(apartment_id, updated_apartment)
     if apartment:
         return {
@@ -629,92 +642,94 @@ def update_apartment(
             "number": apartment.number,
             "description": apartment.description,
         }
-    raise HTTPException(status_code=404, detail="Apartment not found")
+    raise APIException(status_code=404, detail="Apartment not found")
 
 
-@app.delete("/apartments/delete/{apartment_id}")
+@app.delete("/apartments/{apartment_id}")
 def delete_apartment(apartment_id: int, user: db.User = Depends(authenticate_user)):
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+        raise APIException(status_code=403, detail="Admin access required")
     if db.remove_apartment(apartment_id):
         return {"status": "Apartment deleted successfully"}
-    raise HTTPException(status_code=404, detail="Apartment not found")
+    raise APIException(status_code=404, detail="Apartment not found")
 
 
-@app.post("/guest/schedule/recurring/create")
+@app.post("/guests/{user_id}/recurring-schedules")
 def create_recurring_schedule(
+    user_id: int,
     schedule: RecurringScheduleRequest,
     current_user: db.User = Depends(authenticate_user),
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
-    guest_user = db.get_user(schedule.user_id)
+    guest_user = db.get_user(user_id)
     if not guest_user or guest_user.role != "guest":
-        raise HTTPException(status_code=400, detail="Invalid guest user")
+        raise APIException(status_code=400, detail="Invalid guest user")
 
     if (
         current_user.role == "apartment_admin"
         and guest_user.apartment_id != current_user.apartment_id
     ):
-        raise HTTPException(
+        raise APIException(
             status_code=403,
             detail="Cannot modify schedule for guests from other apartments",
         )
 
     new_schedule = db.add_recurring_guest_schedule(
-        schedule.user_id, schedule.day_of_week, schedule.start_time, schedule.end_time
+        user_id, schedule.day_of_week, schedule.start_time, schedule.end_time
     )
     return {"status": "Recurring schedule created", "schedule_id": new_schedule.id}
 
 
-@app.post("/guest/access/one-time/create")
+@app.post("/guests/{user_id}/one-time-accesses")
 def create_one_time_access(
+    user_id: int,
     access: OneTimeAccessRequest,
     current_user: db.User = Depends(authenticate_user),
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
-    guest_user = db.get_user(access.user_id)
+    guest_user = db.get_user(user_id)
     if not guest_user or guest_user.role != "guest":
-        raise HTTPException(status_code=400, detail="Invalid guest user")
+        raise APIException(status_code=400, detail="Invalid guest user")
 
     if (
         current_user.role == "apartment_admin"
         and guest_user.apartment_id != current_user.apartment_id
     ):
-        raise HTTPException(
+        raise APIException(
             status_code=403,
             detail="Cannot modify access for guests from other apartments",
         )
 
     new_access = db.add_one_time_guest_access(
-        access.user_id, access.access_date, access.start_time, access.end_time
+        user_id, access.access_date, access.start_time, access.end_time
     )
     return {"status": "One-time access created", "access_id": new_access.id}
 
 
-@app.get("/guest/schedule/list")
+@app.get("/guests/{user_id}/schedules")
 def list_guest_schedules(
-    user_id: int = Query(..., description="ID of the guest user"),
+    user_id: int,
     current_user: db.User = Depends(authenticate_user),
 ):
     if (
         current_user.role not in ["admin", "apartment_admin"]
         and current_user.id != user_id
     ):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     guest_user = db.get_user(user_id)
     if not guest_user or guest_user.role != "guest":
-        raise HTTPException(status_code=400, detail="Invalid guest user")
+        raise APIException(status_code=400, detail="Invalid guest user")
 
     if (
         current_user.role == "apartment_admin"
         and guest_user.apartment_id != current_user.apartment_id
     ):
-        raise HTTPException(
+        raise APIException(
             status_code=403,
             detail="Cannot view schedules for guests from other apartments",
         )
@@ -744,52 +759,52 @@ def list_guest_schedules(
     }
 
 
-@app.delete("/guest/schedule/recurring/delete/{schedule_id}")
+@app.delete("/guests/recurring-schedules/{schedule_id}")
 def delete_recurring_schedule(
     schedule_id: int, current_user: db.User = Depends(authenticate_user)
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     schedule = db.get_recurring_guest_schedule(schedule_id)
     if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise APIException(status_code=404, detail="Schedule not found")
 
     if current_user.role == "apartment_admin":
         guest_user = db.get_user(schedule.user_id)
         if guest_user.apartment_id != current_user.apartment_id:
-            raise HTTPException(
+            raise APIException(
                 status_code=403,
                 detail="Cannot remove schedules for guests from other apartments",
             )
 
     if db.remove_recurring_guest_schedule(schedule_id):
         return {"status": "Recurring schedule deleted successfully"}
-    raise HTTPException(status_code=500, detail="Failed to delete recurring schedule")
+    raise APIException(status_code=500, detail="Failed to delete recurring schedule")
 
 
-@app.delete("/guest/access/one-time/delete/{access_id}")
+@app.delete("/guests/one-time-accesses/{access_id}")
 def delete_one_time_access(
     access_id: int, current_user: db.User = Depends(authenticate_user)
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     access = db.get_one_time_guest_access(access_id)
     if not access:
-        raise HTTPException(status_code=404, detail="One-time access not found")
+        raise APIException(status_code=404, detail="One-time access not found")
 
     if current_user.role == "apartment_admin":
         guest_user = db.get_user(access.user_id)
         if guest_user.apartment_id != current_user.apartment_id:
-            raise HTTPException(
+            raise APIException(
                 status_code=403,
                 detail="Cannot remove access for guests from other apartments",
             )
 
     if db.remove_one_time_guest_access(access_id):
         return {"status": "One-time access deleted successfully"}
-    raise HTTPException(status_code=500, detail="Failed to delete one-time access")
+    raise APIException(status_code=500, detail="Failed to delete one-time access")
 
 
 if __name__ == "__main__":
