@@ -75,8 +75,8 @@ class User(Base):
     rfids = relationship("Rfid", back_populates="user", foreign_keys="[Rfid.user_id]")
     tokens = relationship("Token", back_populates="user")
     login_codes = relationship("LoginCode", back_populates="user")
-    recurring_schedules = relationship("RecurringGuestSchedule", back_populates="user")
-    one_time_access = relationship("OneTimeGuestAccess", back_populates="user")
+    recurring_schedule = relationship("RecurringSchedule", back_populates="user")
+    one_time_access = relationship("OneTimeAccess", back_populates="user")
 
 
 @add_getitem
@@ -134,11 +134,11 @@ class RecurringSchedule(Base):
     day_of_week = Column(Integer)  # 0 for Monday, 6 for Sunday
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
-    user = relationship("User", back_populates="recurring_schedules")
+    user = relationship("User", back_populates="recurring_schedule")
 
 
 @add_getitem
-class OneTimeAccesses(Base):
+class OneTimeAccess(Base):
     __tablename__ = "one_time_accesses"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
