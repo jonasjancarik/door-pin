@@ -1,10 +1,9 @@
 import uvicorn
 import os
-import time
 import boto3
 import logging
 from botocore.exceptions import ClientError, EndpointConnectionError
-from fastapi import FastAPI, HTTPException, Depends, Request, Query, status
+from fastapi import FastAPI, HTTPException, Depends, Request, status, Path
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -20,8 +19,9 @@ from typing import Optional
 from input_handler import read_input
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, time
 from typing import List
+import time as time_module
 
 load_dotenv()
 
@@ -59,7 +59,7 @@ RATE_LIMIT_DURATION = 60  # 1 minute
 
 
 def check_rate_limit(ip_address):
-    now = time.time()
+    now = time_module.time()
     request_times = rate_limit[ip_address]
     request_times = [t for t in request_times if now - t < RATE_LIMIT_DURATION]
 
@@ -252,7 +252,7 @@ def send_magic_link(request: LoginRequest):
     user = db.get_user(email)
     if user:
         db.save_login_code(
-            user.id, hashed_token, int(time.time()) + 900
+            user.id, hashed_token, int(time_module.time()) + 900
         )  # 15 minutes expiration
     else:
         logging.error(f"Login code requested for a non-existing user {email}.")
@@ -371,7 +371,7 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
         )
 
     # Check if the code has expired
-    current_time = int(time.time())
+    current_time = int(time_module.time())
     if db.is_login_code_expired(user.id, login_code, current_time):
         db.remove_login_code(user.id, login_code)
         raise APIException(
@@ -387,7 +387,7 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     bearer_token = token_urlsafe(16)
     bearer_token_hashed = utils.hash_secret(bearer_token)
     db.save_token(
-        user.id, bearer_token_hashed, int(time.time()) + 31536000
+        user.id, bearer_token_hashed, int(time_module.time()) + 31536000
     )  # 1 year expiration
 
     # Remove the used login code
@@ -397,6 +397,7 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
         "access_token": bearer_token,
         "token_type": "bearer",
         "user": {
+            "id": user.id,
             "apartment_number": user.apartment.number,
             "email": user.email,
             "name": user.name,
@@ -587,7 +588,7 @@ def list_rfids(current_user: db.User = Depends(authenticate_user)):
 
 @app.get("/users/{user_id}/rfids", status_code=status.HTTP_200_OK)
 def list_user_rfids(
-    user_id: int = Query(..., description="User ID to fetch RFIDs for"),
+    user_id: int = Path(..., description="The ID of the user whose RFIDs to list"),
     current_user: db.User = Depends(authenticate_user),
 ):
     if current_user.role == "admin":
@@ -655,7 +656,7 @@ def list_pins(current_user: db.User = Depends(authenticate_user)):
 
 @app.get("/users/{user_id}/pins", status_code=status.HTTP_200_OK)
 def list_user_pins(
-    user_id: int = Query(..., description="User ID to fetch pins for"),
+    user_id: int = Path(..., description="User ID to fetch pins for"),
     current_user: db.User = Depends(authenticate_user),
 ):
     if current_user.role == "admin":
