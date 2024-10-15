@@ -510,7 +510,7 @@ def add_recurring_schedule(user_id, day_of_week, start_time, end_time):
 
 def add_one_time_access(user_id, access_date, start_time, end_time):
     with get_db() as db:
-        new_access = OneTimeAccesses(
+        new_access = OneTimeAccess(
             user_id=user_id,
             access_date=access_date,
             start_time=start_time,
@@ -525,9 +525,7 @@ def add_one_time_access(user_id, access_date, start_time, end_time):
 
 def get_one_time_accesses_by_user(user_id):
     with get_db() as db:
-        return (
-            db.query(OneTimeAccesses).filter(OneTimeAccesses.user_id == user_id).all()
-        )
+        return db.query(OneTimeAccess).filter(OneTimeAccess.user_id == user_id).all()
 
 
 def get_recurring_schedules_by_user(user_id):
@@ -550,7 +548,7 @@ def get_recurring_schedule(schedule_id):
 
 def get_one_time_access(access_id):
     with get_db() as db:
-        return db.query(OneTimeAccesses).filter(OneTimeAccesses.id == access_id).first()
+        return db.query(OneTimeAccess).filter(OneTimeAccess.id == access_id).first()
 
 
 def remove_recurring_schedule(schedule_id):
@@ -570,9 +568,7 @@ def remove_recurring_schedule(schedule_id):
 
 def remove_one_time_access(access_id):
     with get_db() as db:
-        access = (
-            db.query(OneTimeAccesses).filter(OneTimeAccesses.id == access_id).first()
-        )
+        access = db.query(OneTimeAccess).filter(OneTimeAccess.id == access_id).first()
         if access:
             db.delete(access)
             db.commit()
@@ -607,12 +603,12 @@ def is_user_allowed_access(user_id):
 
             # Check one-time access
             one_time_access = (
-                db.query(OneTimeAccesses)
+                db.query(OneTimeAccess)
                 .filter(
-                    OneTimeAccesses.user_id == user_id,
-                    OneTimeAccesses.access_date == current_date,
-                    OneTimeAccesses.start_time <= current_time,
-                    OneTimeAccesses.end_time >= current_time,
+                    OneTimeAccess.user_id == user_id,
+                    OneTimeAccess.access_date == current_date,
+                    OneTimeAccess.start_time <= current_time,
+                    OneTimeAccess.end_time >= current_time,
                 )
                 .first()
             )
