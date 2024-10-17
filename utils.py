@@ -1,6 +1,6 @@
 import RPi.GPIO as GPIO
 import time
-import hashlib
+import bcrypt
 from dotenv import load_dotenv
 import os
 import sys
@@ -11,7 +11,7 @@ load_dotenv()
 try:
     RELAY_PIN = int(os.getenv("RELAY_PIN", 18))
 except ValueError:
-    os.exit("RELAY_PIN must be an integer")
+    sys.exit("RELAY_PIN must be an integer")
 
 RELAY_ACTIVATION_TIME = int(os.getenv("RELAY_ACTIVATION_TIME", 5))  # seconds
 
@@ -45,28 +45,39 @@ def unlock_door(duration=RELAY_ACTIVATION_TIME):
     GPIO.cleanup()
 
 
-def hash_secret(payload=None, salt=None):
+def hash_secret(payload, salt=None):
     """
-    Hashes the given payload using SHA256 algorithm.
+    Hashes the given payload using bcrypt.
 
     Args:
-        payload (str): The payload to be hashed.
-        salt (str): The salt to be added to the payload before hashing.
+        payload (str): The payload to be hashed (e.g., password).
+        salt (bytes, optional): The salt to be used. If not provided, a new salt will be generated.
 
     Returns:
-        str: The hashed value of the payload.
+        str: The bcrypt hash of the payload as a string.
 
     Raises:
-        ValueError: If neither payload nor salt is provided.
+        ValueError: If payload is not provided.
     """
-    if salt and payload:
-        string_to_hash = f"{salt}{payload}"
-    elif payload:
-        string_to_hash = payload
-    else:
-        raise ValueError("At least the payload must be provided.")
-    return hashlib.sha256(string_to_hash.encode("utf-8")).hexdigest()
+    if not payload:
+        raise ValueError("Payload must be provided.")
+
+    if not salt:
+        salt = bcrypt.gensalt()
+
+    hashed = bcrypt.hashpw(payload.encode("utf-8"), salt)
+    return hashed.decode("utf-8")  # Return as string
 
 
-def generate_salt():
-    return os.urandom(16).hex()
+def verify_secret(payload, hashed):
+    """
+    Verifies a payload against a bcrypt hash.
+
+    Args:
+        payload (str): The payload to verify (e.g., password attempt).
+        hashed (str): The bcrypt hash to check against.
+
+    Returns:
+        bool: True if the payload matches the hash, False otherwise.
+    """
+    return bcrypt.checkpw(payload.encode("utf-8"), hashed.encode("utf-8"))

@@ -319,7 +319,10 @@ def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
 
 
 @app.post("/auth/verify", status_code=status.HTTP_200_OK)
-def verify_authentication(user: db.User = Depends(authenticate_user)):
+def verify_authentication(request: Request, user: db.User = Depends(authenticate_user)):
+    current_token = get_current_token(request)
+    new_expiration = int(time_module.time()) + 31536000  # 1 year from now
+    db.extend_token_expiration(utils.hash_secret(current_token), new_expiration)
     return {"status": "authenticated", "user": user}
 
 

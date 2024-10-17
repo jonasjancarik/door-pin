@@ -47,20 +47,18 @@ input_buffer = deque(maxlen=10)
 
 
 def check_pin(input_value):
-    hashed_input = utils.hash_secret(input_value)
-
     # Check if it's a PIN
     all_pins = get_all_pins()
     for pin in all_pins:
-        if pin.hashed_pin == hashed_input:
-            logging.info(f"Valid PIN used (hash {hashed_input})")
+        if utils.verify_secret(input_value, pin.hashed_pin):
+            logging.info("Valid PIN used")
             return True
 
     # If not a PIN, check if it's an RFID
     all_rfids = get_all_rfids()
     for rfid in all_rfids:
-        if rfid.hashed_uuid == hashed_input:
-            logging.info(f"Valid RFID used (hash {hashed_input})")
+        if utils.verify_secret(input_value, rfid.hashed_uuid):
+            logging.info("Valid RFID used")
             return True
 
     logging.warning("Invalid PIN or RFID attempted")
