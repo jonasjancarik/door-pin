@@ -583,13 +583,34 @@ async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
         raise APIException(status_code=500, detail=f"Error reading RFID: {str(e)}")
 
 
-@app.delete("/rfids/{user_id}/{hashed_uuid}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_rfid(
-    user_id: int, hashed_uuid: str, user: db.User = Depends(authenticate_user)
-):
-    if db.delete_rfid(user_id, hashed_uuid):
+@app.delete("/rfids/{rfid_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_rfid(rfid_id: int, current_user: db.User = Depends(authenticate_user)):
+    rfid = db.get_rfid(rfid_id)
+    if not rfid:
+        raise APIException(status_code=404, detail="RFID not found")
+
+    if current_user.role == "admin":
+        # Admins can delete any RFID
+        pass
+    elif current_user.role == "apartment_admin":
+        # Apartment admins can only delete RFIDs from their apartment
+        if rfid.user.apartment_id != current_user.apartment_id:
+            raise APIException(
+                status_code=403,
+                detail="Cannot delete RFIDs for users from other apartments",
+            )
+    elif current_user.role == "guest":
+        # Guests can only delete their own RFIDs
+        if rfid.user_id != current_user.id:
+            raise APIException(
+                status_code=403, detail="Guests can only delete their own RFIDs"
+            )
+    else:
+        raise APIException(status_code=403, detail="Insufficient permissions")
+
+    if db.delete_rfid(rfid_id):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
-    raise APIException(status_code=404, detail="RFID not found")
+    raise APIException(status_code=500, detail="Failed to delete RFID")
 
 
 @app.get("/rfids", status_code=status.HTTP_200_OK)
@@ -659,6 +680,36 @@ def update_pin(
     if pin:
         return {"status": "PIN updated", "pin_id": pin.id}
     raise APIException(status_code=404, detail="PIN not found")
+
+
+@app.delete("/pins/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_pin(pin_id: int, current_user: db.User = Depends(authenticate_user)):
+    pin = db.get_pin(pin_id)
+    if not pin:
+        raise APIException(status_code=404, detail="PIN not found")
+
+    if current_user.role == "admin":
+        # Admins can delete any PIN
+        pass
+    elif current_user.role == "apartment_admin":
+        # Apartment admins can only delete PINs from their apartment
+        if pin.user.apartment_id != current_user.apartment_id:
+            raise APIException(
+                status_code=403,
+                detail="Cannot delete PINs for users from other apartments",
+            )
+    elif current_user.role == "guest":
+        # Guests can only delete their own PINs
+        if pin.user_id != current_user.id:
+            raise APIException(
+                status_code=403, detail="Guests can only delete their own PINs"
+            )
+    else:
+        raise APIException(status_code=403, detail="Insufficient permissions")
+
+    if db.delete_pin(pin_id):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    raise APIException(status_code=500, detail="Failed to delete PIN")
 
 
 @app.get("/pins", status_code=status.HTTP_200_OK)

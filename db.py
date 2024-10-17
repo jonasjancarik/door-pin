@@ -294,13 +294,20 @@ def save_rfid(user_id, hashed_uuid, last_four_digits, label):
         return new_rfid
 
 
-def delete_rfid(id):
+def get_rfid(rfid_id):
     with get_db() as db:
-        if rfid := db.query(Rfid).filter(Rfid.id == id).first():
+        return db.query(Rfid).filter(Rfid.id == rfid_id).first()
+
+
+def delete_rfid(rfid_id):
+    with get_db() as db:
+        rfid = db.query(Rfid).filter(Rfid.id == rfid_id).first()
+        if rfid:
             db.delete(rfid)
             db.commit()
             logger.info(f"RFID {rfid.label} deleted for user {rfid.user.email}")
             return True
+        logger.warning(f"Attempted to delete non-existent RFID with ID {rfid_id}")
         return False
 
 
@@ -419,6 +426,11 @@ def save_pin(user_id, hashed_pin, label):
         return new_pin
 
 
+def get_pin(pin_id):
+    with get_db() as db:
+        return db.query(Pin).filter(Pin.id == pin_id).first()
+
+
 def update_pin(pin_id, hashed_pin, label):
     with get_db() as db:
         pin = db.query(Pin).filter(Pin.id == pin_id).first()
@@ -430,6 +442,18 @@ def update_pin(pin_id, hashed_pin, label):
             logger.info(f"Pin {label} updated for pin {pin_id}")
             return pin
         return None
+
+
+def delete_pin(pin_id):
+    with get_db() as db:
+        pin = db.query(Pin).filter(Pin.id == pin_id).first()
+        if pin:
+            db.delete(pin)
+            db.commit()
+            logger.info(f"Pin {pin.label} deleted for user {pin.user_id}")
+            return True
+        logger.warning(f"Attempted to delete non-existent pin with ID {pin_id}")
+        return False
 
 
 def remove_pin(pin_id):
