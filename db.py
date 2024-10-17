@@ -234,25 +234,29 @@ def update_user(user_id, updated_user):
                 raise ValueError(f"User with email {new_email} already exists")
 
         for key, value in updated_user.items():
-            setattr(user, key, value)
+            if key == "apartment":
+                if isinstance(value, dict) and "number" in value:
+                    apartment = (
+                        db.query(Apartment)
+                        .filter(Apartment.number == value["number"])
+                        .first()
+                    )
+                    if apartment:
+                        user.apartment = apartment
+                    else:
+                        logger.error(
+                            f"Apartment with number {value['number']} not found"
+                        )
+                        raise ValueError(
+                            f"Apartment with number {value['number']} not found"
+                        )
+            else:
+                setattr(user, key, value)
 
         db.commit()
         db.refresh(user)
         logger.info(f"User {user.email} updated")
         return user
-
-
-def update_user_tokens(email, tokens):
-    with get_db() as db:
-        user = db.query(User).filter(User.email == email).first()
-        if user:
-            for token_data in tokens:
-                token_hash = utils.hash_secret(token_data["token"])
-                expiration = token_data["expiration"]
-                save_token(user.id, token_hash, expiration)
-            logger.info(f"Tokens updated for user {email}")
-            return user
-        return None
 
 
 def delete_token(token_id):
@@ -266,17 +270,17 @@ def delete_token(token_id):
         return False
 
 
-def update_user_login_codes(email, login_codes):
+def extend_token_expiration(token, new_expiration):
     with get_db() as db:
-        user = db.query(User).filter(User.email == email).first()
-        if user:
-            for code_data in login_codes:
-                code_hash = utils.hash_secret(code_data["code"])
-                expiration = code_data["expiration"]
-                save_login_code(user.id, code_hash, expiration)
-            logger.info(f"Login codes updated for user {email}")
-            return user
-        return None
+        token_hash = utils.hash_secret(token)
+        stored_token = db.query(Token).filter(Token.token_hash == token_hash).first()
+        if stored_token:
+            stored_token.expiration = new_expiration
+            db.commit()
+            logger.info(f"Token expiration extended for user {stored_token.user_id}")
+            return True
+        logger.warning("Attempted to extend expiration for non-existent token")
+        return False
 
 
 def save_rfid(user_id, hashed_uuid, last_four_digits, label):
@@ -382,17 +386,6 @@ def get_user_by_token(token):
         )
 
         return user
-
-
-def update_user_login_and_tokens(email, login_codes, tokens):
-    with get_db() as db:
-        user = db.query(User).filter(User.email == email).first()
-        if user:
-            update_user_login_codes(email, login_codes)
-            update_user_tokens(email, tokens)
-            logger.info(f"Login codes and tokens updated for user {email}")
-            return user
-        return None
 
 
 def save_token(user_id, token_hash, expiration):

@@ -58,6 +58,24 @@ MAX_ATTEMPTS = 5
 RATE_LIMIT_DURATION = 60  # 1 minute
 
 
+def apartment_return_format(apartment: db.Apartment):
+    return {
+        "id": apartment.id,
+        "number": apartment.number,
+        "description": apartment.description,
+    }
+
+
+def user_return_format(user: db.User):
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "apartment": apartment_return_format(user.apartment),
+        "role": user.role,
+    }
+
+
 def check_rate_limit(ip_address):
     now = time_module.time()
     request_times = rate_limit[ip_address]
@@ -315,21 +333,21 @@ def send_magic_link(request: LoginRequest):
 def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
     if user := db.get_user_by_token(web_app_token):
         return user
-    raise HTTPException(status_code=401, detail="Unauthorized")
+    raise APIException(status_code=401, detail="Unauthorized")
 
 
 @app.post("/auth/verify", status_code=status.HTTP_200_OK)
 def verify_authentication(request: Request, user: db.User = Depends(authenticate_user)):
     current_token = get_current_token(request)
     new_expiration = int(time_module.time()) + 31536000  # 1 year from now
-    db.extend_token_expiration(utils.hash_secret(current_token), new_expiration)
-    return {"status": "authenticated", "user": user}
+    db.extend_token_expiration(current_token, new_expiration)
+    return {"status": "authenticated", "user": user_return_format(user)}
 
 
 def get_current_token(request: Request) -> str:
     authorization: str = request.headers.get("Authorization")
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise APIException(status_code=401, detail="Unauthorized")
     return authorization.replace("Bearer ", "")
 
 
@@ -399,13 +417,7 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     return {
         "access_token": bearer_token,
         "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "apartment_number": user.apartment.number,
-            "email": user.email,
-            "name": user.name,
-            "role": user.role,
-        },
+        "user": user_return_format(user),
     }
 
 
@@ -461,13 +473,7 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
 
     return {
         "status": "user created",
-        "user": {
-            "id": created_user.id,
-            "name": created_user.name,
-            "email": created_user.email,
-            "apartment_number": apartment.number,
-            "role": created_user.role,
-        },
+        "user": user_return_format(created_user),
     }
 
 
@@ -480,16 +486,7 @@ def list_users(current_user: db.User = Depends(authenticate_user)):
     else:
         raise APIException(status_code=403, detail="Guests cannot list users")
 
-    return [
-        {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email,
-            "role": user.role,
-            "apartment_number": user.apartment.number,
-        }
-        for user in users
-    ]
+    return [user_return_format(user) for user in users]
 
 
 @app.get("/users/{user_id}", status_code=status.HTTP_200_OK)
@@ -536,11 +533,26 @@ def update_user(
 
 @app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)):
-    if current_user.role != "admin":
-        raise APIException(status_code=403, detail="Admin access required")
+    if current_user.role not in ["admin", "apartment_admin"]:
+        raise APIException(status_code=403, detail="Insufficient permissions")
+
+    user_to_delete = db.get_user(user_id)
+    if not user_to_delete:
+        raise APIException(status_code=404, detail="User not found")
+
+    if current_user.role == "apartment_admin":
+        if user_to_delete.apartment_id != current_user.apartment_id:
+            raise APIException(
+                status_code=403, detail="Cannot delete users from other apartments"
+            )
+        if user_to_delete.role == "admin":
+            raise APIException(
+                status_code=403, detail="Apartment admins cannot delete admin users"
+            )
+
     if db.remove_user(user_id):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
-    raise APIException(status_code=404, detail="User not found")
+    raise APIException(status_code=500, detail="Failed to delete user")
 
 
 @app.post("/rfids", status_code=status.HTTP_201_CREATED)
@@ -767,15 +779,7 @@ def list_user_pins(
 def list_apartments(user: db.User = Depends(authenticate_user)):
     if user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
-    apartments = db.get_all_apartments()
-    return [
-        {
-            "id": apartment.id,
-            "number": apartment.number,
-            "description": apartment.description,
-        }
-        for apartment in apartments
-    ]
+    return [apartment_return_format(apartment) for apartment in db.get_all_apartments()]
 
 
 @app.post("/apartments", status_code=status.HTTP_201_CREATED)
@@ -783,11 +787,7 @@ def create_apartment(apartment: dict, user: db.User = Depends(authenticate_user)
     if user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
     new_apartment = db.add_apartment(apartment["number"], apartment.get("description"))
-    return {
-        "id": new_apartment.id,
-        "number": new_apartment.number,
-        "description": new_apartment.description,
-    }
+    return apartment_return_format(new_apartment)
 
 
 @app.put("/apartments/{apartment_id}", status_code=status.HTTP_200_OK)
@@ -800,11 +800,7 @@ def update_apartment(
         raise APIException(status_code=403, detail="Admin access required")
     apartment = db.update_apartment(apartment_id, updated_apartment)
     if apartment:
-        return {
-            "id": apartment.id,
-            "number": apartment.number,
-            "description": apartment.description,
-        }
+        return apartment_return_format(apartment)
     raise APIException(status_code=404, detail="Apartment not found")
 
 

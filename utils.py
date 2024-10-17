@@ -1,9 +1,9 @@
 import RPi.GPIO as GPIO
 import time
-import bcrypt
 from dotenv import load_dotenv
 import os
 import sys
+import hashlib
 
 load_dotenv()
 
@@ -47,14 +47,15 @@ def unlock_door(duration=RELAY_ACTIVATION_TIME):
 
 def hash_secret(payload, salt=None):
     """
-    Hashes the given payload using bcrypt.
+    Hashes the given payload using SHA-512.
 
     Args:
-        payload (str): The payload to be hashed (e.g., password).
-        salt (bytes, optional): The salt to be used. If not provided, a new salt will be generated.
+        payload (str): The payload to be hashed.
+        salt (bytes or str, optional): The salt to be used. If not provided, no salt will be used.
 
     Returns:
-        str: The bcrypt hash of the payload as a string.
+        str: The SHA-512 hash of the payload as a hexadecimal string.
+            If a salt was used, it's prepended to the hash.
 
     Raises:
         ValueError: If payload is not provided.
@@ -62,22 +63,17 @@ def hash_secret(payload, salt=None):
     if not payload:
         raise ValueError("Payload must be provided.")
 
-    if not salt:
-        salt = bcrypt.gensalt()
+    # Convert salt to bytes if it's a string
+    if isinstance(salt, str):
+        salt = salt.encode("utf-8")
 
-    hashed = bcrypt.hashpw(payload.encode("utf-8"), salt)
-    return hashed.decode("utf-8")  # Return as string
+    # Create SHA-512 hash
+    sha512 = hashlib.sha512()
 
-
-def verify_secret(payload, hashed):
-    """
-    Verifies a payload against a bcrypt hash.
-
-    Args:
-        payload (str): The payload to verify (e.g., password attempt).
-        hashed (str): The bcrypt hash to check against.
-
-    Returns:
-        bool: True if the payload matches the hash, False otherwise.
-    """
-    return bcrypt.checkpw(payload.encode("utf-8"), hashed.encode("utf-8"))
+    if salt:
+        sha512.update(salt)
+        sha512.update(payload.encode("utf-8"))
+        return salt.hex() + sha512.hexdigest()
+    else:
+        sha512.update(payload.encode("utf-8"))
+        return sha512.hexdigest()

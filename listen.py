@@ -50,14 +50,14 @@ def check_pin(input_value):
     # Check if it's a PIN
     all_pins = get_all_pins()
     for pin in all_pins:
-        if utils.verify_secret(input_value, pin.hashed_pin):
+        if utils.hash_secret(input_value) == pin.hashed_pin:
             logging.info("Valid PIN used")
             return True
 
     # If not a PIN, check if it's an RFID
     all_rfids = get_all_rfids()
     for rfid in all_rfids:
-        if utils.verify_secret(input_value, rfid.hashed_uuid):
+        if utils.hash_secret(input_value) == rfid.hashed_uuid:
             logging.info("Valid RFID used")
             return True
 
