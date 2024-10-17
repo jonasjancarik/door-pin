@@ -375,6 +375,7 @@ def get_user_by_token(token):
     with get_db() as db:
         user = (
             db.query(User)
+            .populate_existing()  # This bypasses SQLAlchemy's session-level cache
             .join(Token)
             .filter(Token.token_hash == token_hash, Token.expiration > current_time)
             .first()
