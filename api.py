@@ -489,18 +489,46 @@ def list_users(current_user: db.User = Depends(authenticate_user)):
     ]
 
 
+@app.get("/users/{user_id}", status_code=status.HTTP_200_OK)
+def get_user(user_id: int, current_user: db.User = Depends(authenticate_user)):
+    user = db.get_user(user_id)
+    if current_user.role != "admin" and current_user.id != user_id:
+        if current_user.apartment.id != user.apartment.id:
+            raise APIException(
+                status_code=403, detail="Admin access required to view other users"
+            )
+        elif current_user.role != "apartment_admin":
+            raise APIException(
+                status_code=403,
+                detail="Only apartment admins (and admins) can view other users from the same apartment.",
+            )
+    if not user:
+        raise APIException(status_code=404, detail="User not found")
+    return user
+
+
 @app.put("/users/{user_id}", status_code=status.HTTP_200_OK)
 def update_user(
     user_id: int, updated_user: dict, current_user: db.User = Depends(authenticate_user)
 ):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
-    user = db.get_user(user_id)
-    if not user:
-        raise APIException(status_code=404, detail="User not found")
-    updated_user["id"] = user_id
-    db.save_user(updated_user)
-    return {"status": "User updated successfully"}
+    try:
+        updated_user_to_return = db.update_user(user_id, updated_user)
+        if not updated_user_to_return:
+            raise APIException(status_code=404, detail="User not found")
+        return {
+            "status": "User updated successfully",
+            "user": {
+                "id": updated_user_to_return.id,
+                "name": updated_user_to_return.name,
+                "email": updated_user_to_return.email,
+                "apartment_number": updated_user_to_return.apartment.number,
+                "role": updated_user_to_return.role,
+            },
+        }
+    except ValueError as e:
+        raise APIException(status_code=400, detail=str(e))
 
 
 @app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

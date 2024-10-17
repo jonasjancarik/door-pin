@@ -54,7 +54,9 @@ def add_getitem(cls):
 class Apartment(Base):
     __tablename__ = "apartments"
     id = Column(Integer, primary_key=True, index=True)
-    number = Column(String, unique=True, nullable=False)
+    number = Column(
+        String, unique=True, nullable=False
+    )  # todo: rename to "name", it's a string and we should have the flexibility to use any name, not just numbers
     description = Column(String)
     users = relationship("User", back_populates="apartment", lazy="joined")
 
@@ -215,6 +217,29 @@ def save_user(user):
             return existing_user
         else:
             return add_user(user)
+
+
+def update_user(user_id, updated_user):
+    with get_db() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            logger.error(f"User with id {user_id} not found")
+            return None
+
+        if "email" in updated_user:
+            new_email = updated_user["email"]
+            existing_user = db.query(User).filter(User.email == new_email).first()
+            if existing_user and existing_user.id != user_id:
+                logger.error(f"User with email {new_email} already exists")
+                raise ValueError(f"User with email {new_email} already exists")
+
+        for key, value in updated_user.items():
+            setattr(user, key, value)
+
+        db.commit()
+        db.refresh(user)
+        logger.info(f"User {user.email} updated")
+        return user
 
 
 def update_user_tokens(email, tokens):

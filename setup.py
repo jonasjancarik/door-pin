@@ -1,81 +1,167 @@
 import db
 import csv
 import os
+import logging
+from typing import List, Dict, Optional
+from dotenv import load_dotenv
 
-# Initialize the database
-db.init_db()
+# Load environment variables
+load_dotenv()
 
-# Ask user if they want to load a CSV file with apartments and users, if not, they'll do it interactively
-load_csv = input(
-    "Do you want to load a CSV file (users.csv) with apartments and users? (Y/n) "
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-if load_csv.lower() == "y" or load_csv == "":
-    if not os.path.exists("users.csv"):
-        print("users.csv file not found.")
-        # ask for path
-        csv_file = input("Enter the path to the CSV file: ")
-    else:
-        csv_file = "users.csv"
+
+def init_database():
+    try:
+        db.init_db()
+        logging.info("Database initialized successfully")
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {e}")
+        exit(1)
+
+
+def validate_csv_structure(file_path: str) -> bool:
+    required_columns = {"apartment_number", "name", "email", "role"}
+    try:
+        with open(file_path, "r") as csvfile:
+            reader = csv.reader(csvfile)
+            headers = next(reader, [])
+            header_set = set(headers)
+
+            if not required_columns.issubset(header_set):
+                missing_columns = required_columns - header_set
+                logging.error(
+                    f"CSV is missing required columns: {', '.join(missing_columns)}"
+                )
+                return False
+
+            logging.info(f"CSV headers: {headers}")
+
+            for row_num, row in enumerate(reader, start=2):
+                if len(row) != len(headers):
+                    logging.error(f"Row {row_num} has an incorrect number of columns")
+                    return False
+
+                row_dict = dict(zip(headers, row))
+                if not row_dict["apartment_number"].isdigit():
+                    logging.error(
+                        f"Row {row_num}: apartment_number must be a number, got {row_dict['apartment_number']} instead."
+                    )
+                    return False
+
+                if not row_dict["email"]:
+                    logging.error(f"Row {row_num}: email cannot be empty")
+                    return False
+
+                if row_dict["role"] not in ["admin", "apartment_admin", "guest"]:
+                    logging.error(
+                        f"Row {row_num}: invalid role. Must be admin, apartment_admin, or guest, got {row_dict['role']} instead."
+                    )
+                    return False
+
+        return True
+    except Exception as e:
+        logging.error(f"Error validating CSV file: {e}")
+        return False
+
+
+def load_csv_data(file_path: str) -> List[Dict[str, str]]:
+    if not validate_csv_structure(file_path):
+        logging.error("CSV validation failed. Please check the file and try again.")
+        return []
 
     try:
-        data = csv.DictReader(open(csv_file))
+        with open(file_path, "r") as csvfile:
+            reader = csv.DictReader(csvfile)
+            data = list(reader)
+            logging.debug(f"CSV headers: {reader.fieldnames}")
+            logging.debug(f"First row: {data[0] if data else 'No data'}")
+            return data
     except FileNotFoundError:
-        print("File not found.")
+        logging.error(f"CSV file not found: {file_path}")
+        return []
+    except csv.Error as e:
+        logging.error(f"Error reading CSV file: {e}")
+        return []
 
-    # Loop through the CSV file and create a DB entry for each apartment
+
+def process_csv_row(row: Dict[str, str]) -> Optional[Dict[str, str]]:
+    apartment_number = row.get("apartment_number")
+    if not apartment_number:
+        logging.warning(f"Skipping row without apartment number: {row}")
+        return None
+
+    apartment = db.get_apartment_by_number(apartment_number)
+    if not apartment:
+        apartment = db.add_apartment(apartment_number)
+        logging.info(f"Created new apartment: {apartment_number}")
+
+    user_data = {
+        "apartment_id": apartment.id,
+        "name": row.get("name"),
+        "email": row.get("email"),
+        "role": row.get("role", "apartment_admin"),
+    }
+
+    logging.debug(f"Processing row: {row}")
+    logging.debug(f"Created user data: {user_data}")
+
+    return user_data
+
+
+def add_user(user_data: Dict[str, str]) -> None:
+    created_user = db.add_user(user_data)
+    if created_user:
+        logging.info(
+            f"Added user {created_user.name} ({created_user.email}) to apartment {user_data['apartment_id']} with role {created_user.role}"
+        )
+    else:
+        logging.error(
+            f"Failed to add user {user_data['name']} ({user_data['email']}) to apartment {user_data['apartment_id']}"
+        )
+
+
+def setup_from_csv(csv_file: str) -> bool:
+    data = load_csv_data(csv_file)
+    if not data:
+        return False
     for row in data:
-        apartment_number = row["apartment_number"]
-        apartment = db.get_apartment_by_number(apartment_number)
-        if not apartment:
-            apartment = db.add_apartment(apartment_number)
-        row["apartment_id"] = apartment.id
-        del row["apartment_number"]
+        user_data = process_csv_row(row)
+        if user_data:
+            add_user(user_data)
+    return True
 
-        # Remove 'admin' and 'guest' keys
-        row.pop("admin", None)
-        row.pop("guest", None)
 
-        created_user = db.add_user(row)
-        if created_user:
-            print(
-                f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number} with role {created_user.role}"
-            )
-        else:
-            print(
-                f"Failed to add user {row['name']} ({row['email']}) to apartment {apartment_number}"
-            )
-
-else:
-    # Ask user how many apartments to set up
+def setup_interactively() -> None:
     num_apartments = int(input("How many apartments would you like to set up? "))
 
-    # Loop through the number of apartments and create a DB entry for each apartment
     for i in range(num_apartments):
-        db.add_apartment(i + 1)
+        apartment_number = i + 1
+        db.add_apartment(apartment_number)
+        logging.info(f"Added apartment {apartment_number}")
 
-    # Ask if the user wants to add any users to the apartments
-    add_users = input("Do you want to add users to the apartments? (y/n) ")
+    add_users = (
+        input("Do you want to add users to the apartments? (y/n) ").lower() == "y"
+    )
 
-    if add_users.lower() == "y":
-        # Loop through the apartments and add users to each apartment
+    if add_users:
         for i in range(num_apartments):
             apartment_number = i + 1
-            num_users = None
-            while not num_users:
+            while True:
                 try:
                     num_users = int(
                         input(
                             f"How many users would you like to add to apartment {apartment_number}? "
                         )
                     )
-                    if num_users == 0:
-                        break
+                    break
                 except ValueError:
-                    print("Invalid input. Please enter a number.")
-                    continue
+                    print("Please enter a valid number.")
+
             for j in range(num_users):
-                # ask for name, email, and role
                 name = input(f"Enter the name for user {j + 1}: ")
                 email = input(f"Enter the email for user {j + 1}: ")
                 role = input(
@@ -84,19 +170,49 @@ else:
                 if role not in ["admin", "apartment_admin", "guest"]:
                     role = "apartment_admin"
 
-                user = {
+                user_data = {
                     "name": name,
                     "email": email,
                     "role": role,
                     "apartment_id": db.get_apartment_by_number(apartment_number).id,
                 }
+                add_user(user_data)
 
-                created_user = db.add_user(user)
-                if created_user:
-                    print(
-                        f"Added user {created_user.name} ({created_user.email}) to apartment {apartment_number} with role {created_user.role}"
-                    )
-                else:
-                    print(
-                        f"Failed to add user {name} ({email}) to apartment {apartment_number}"
-                    )
+
+def main():
+    # check if data.db exists and ask user if they want to delete it or rename it or exit
+    if os.path.exists("data.db"):
+        print("data.db already exists.")
+        overwrite = input("Do you want to delete it? (y/n) ").lower()
+        if overwrite == "y":
+            os.remove("data.db")
+            logging.info("data.db deleted.")
+        else:
+            new_name = input("Enter a new name for the database file: ")
+            os.rename("data.db", new_name)
+            logging.info(f"data.db renamed to {new_name}.")
+
+    init_database()
+
+    setup_method = input(
+        "Do you want to load a CSV file (users.csv) with apartments and users? (Y/n) "
+    ).lower()
+
+    setup_successful = False
+    if setup_method in ["y", ""]:
+        csv_file = "users.csv"
+        if not os.path.exists(csv_file):
+            csv_file = input("Enter the path to the CSV file: ")
+        setup_successful = setup_from_csv(csv_file)
+    else:
+        setup_interactively()
+        setup_successful = True
+
+    if setup_successful:
+        logging.info("Setup completed successfully")
+    else:
+        logging.error("Setup failed. Please check the errors above and try again.")
+
+
+if __name__ == "__main__":
+    main()
