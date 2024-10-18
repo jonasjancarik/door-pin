@@ -106,29 +106,6 @@ class AuthResponse(BaseModel):
     user: dict
 
 
-# User models
-class UserCreate(BaseModel):
-    name: str
-    email: EmailStr
-    role: str
-    apartment_number: int
-
-
-class UserResponse(BaseModel):
-    id: int
-    name: str
-    email: EmailStr
-    role: str
-    apartment_number: int
-
-
-class UserUpdate(BaseModel):
-    name: Optional[str]
-    email: Optional[EmailStr]
-    role: Optional[str]
-    apartment_number: Optional[int]
-
-
 # RFID models
 class RFIDCreate(BaseModel):
     uuid: str
@@ -149,6 +126,7 @@ class RFIDResponse(BaseModel):
 class PINCreate(BaseModel):
     pin: str
     label: str
+    user_id: Optional[int] = None
 
 
 class PINResponse(BaseModel):
@@ -166,19 +144,42 @@ class PINUpdate(BaseModel):
 
 # Apartment models
 class ApartmentCreate(BaseModel):
-    number: int
-    description: Optional[str]
+    number: str  # todo: yes number is string - we should rename "number" to "apartment_name" probably, because this doesn't have to be a numeric identifier
+    description: Optional[str] = None
 
 
 class ApartmentResponse(BaseModel):
     id: int
-    number: int
+    number: str
     description: Optional[str]
 
 
 class ApartmentUpdate(BaseModel):
-    number: Optional[int]
-    description: Optional[str]
+    number: Optional[str]
+    description: Optional[str] = None
+
+
+# User models
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    apartment: ApartmentCreate  # we could also use another "ApartmentIdentifier" class here as we only need the number, but ApartmentCreate works
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: str
+    apartment_number: int
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str]
+    email: Optional[EmailStr]
+    role: Optional[str]
+    apartment_number: Optional[int]
 
 
 # Guest schedule models
@@ -428,29 +429,34 @@ def unlock_door(_: db.User = Depends(authenticate_user)):
 
 
 @app.post("/users", status_code=status.HTTP_201_CREATED)
-def create_user(new_user: dict, current_user: db.User = Depends(authenticate_user)):
+def create_user(
+    new_user: UserCreate, current_user: db.User = Depends(authenticate_user)
+):
     if current_user.role == "guest":
         raise APIException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
         )
 
-    if not new_user.get("apartment_number") or not new_user.get("email"):
+    if (
+        not ((apartment := new_user.apartment) and apartment.number)
+        or not new_user.email
+    ):
         raise APIException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing apartment number or email",
+            detail="Missing apartment, apartment number, or email",
         )
 
-    if new_user.get("role") == "admin" and current_user.role != "admin":
+    if new_user.role and new_user.role == "admin" and current_user.role != "admin":
         raise APIException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create admin users",
         )
 
-    apartment = db.get_apartment_by_number(new_user.get("apartment_number"))
+    apartment = db.get_apartment_by_number(new_user.apartment.number)
     if not apartment:
         raise APIException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Apartment with number {new_user.get('apartment_number')} not found",
+            detail=f"Apartment with number {new_user.apartment.number} not found",
         )
 
     if apartment.id != current_user.apartment.id and current_user.role != "admin":
@@ -459,17 +465,22 @@ def create_user(new_user: dict, current_user: db.User = Depends(authenticate_use
             detail="You can only create users for your own apartment",
         )
 
-    existing_user = db.get_user(new_user.get("email"))
+    existing_user = db.get_user(new_user.email)
     if existing_user:
         raise APIException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"User with email {new_user.get('email')} already exists",
+            detail=f"User with email {new_user.email} already exists",
         )
 
-    new_user["creator_id"] = current_user.id
-    new_user["apartment_id"] = apartment.id
-    new_user["role"] = new_user.get("role", "apartment_admin")
-    created_user = db.add_user(new_user)
+    created_user = db.add_user(
+        {
+            "name": new_user.name,
+            "email": new_user.email,
+            "role": new_user.role,
+            "apartment_id": apartment.id,
+            "creator_id": current_user.id,
+        }
+    )
 
     return {
         "status": "user created",
@@ -681,9 +692,15 @@ def list_user_rfids(
 @app.post("/pins", status_code=status.HTTP_201_CREATED)
 def create_pin(pin_request: PINCreate, user: db.User = Depends(authenticate_user)):
     hashed_pin = utils.hash_secret(payload=pin_request.pin)
-    user_id = db.get_user(user.email).id
+    if not pin_request.user_id:
+        user_id = db.get_user(user.email).id
+    else:
+        user_id = pin_request.user_id
     pin = db.save_pin(user_id, hashed_pin, pin_request.label)
-    return {"status": "PIN saved", "pin_id": pin.id}
+    return {
+        "status": "PIN saved",
+        "pin": {"id": pin.id, "label": pin.label, "user_id": user_id},
+    }
 
 
 @app.patch("/pins/{pin_id}", status_code=status.HTTP_200_OK)
