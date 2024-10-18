@@ -109,7 +109,7 @@ class AuthResponse(BaseModel):
 # RFID models
 class RFIDCreate(BaseModel):
     uuid: str
-    label: str
+    label: Optional[str] = None
     user_id: Optional[int] = None
 
 
@@ -125,7 +125,7 @@ class RFIDResponse(BaseModel):
 # PIN models
 class PINCreate(BaseModel):
     pin: str
-    label: str
+    label: Optional[str] = None
     user_id: Optional[int] = None
 
 

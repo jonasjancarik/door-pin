@@ -290,6 +290,7 @@ def save_rfid(user_id, hashed_uuid, salt, last_four_digits, label):
         new_rfid = Rfid(
             user_id=user_id,
             hashed_uuid=hashed_uuid,
+            salt=salt,
             last_four_digits=last_four_digits,
             label=label,
         )
