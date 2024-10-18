@@ -46,18 +46,20 @@ def open_door():
 input_buffer = deque(maxlen=10)
 
 
-def check_pin(input_value):
+def check_input(input_value):
+    # todo: yes we could probably check the length of the input and if it's over the max length of a PIN
+
     # Check if it's a PIN
     all_pins = get_all_pins()
     for pin in all_pins:
-        if utils.hash_secret(input_value) == pin.hashed_pin:
+        if utils.hash_secret(input_value, pin.salt) == pin.hashed_pin:
             logging.info("Valid PIN used")
             return True
 
     # If not a PIN, check if it's an RFID
     all_rfids = get_all_rfids()
     for rfid in all_rfids:
-        if utils.hash_secret(input_value) == rfid.hashed_uuid:
+        if utils.hash_secret(input_value, rfid.salt) == rfid.hashed_uuid:
             logging.info("Valid RFID used")
             return True
 
@@ -76,7 +78,7 @@ async def main():
                 print(f"Input received: {input_value}")
             else:
                 print("Input received...", flush=True)
-            if check_pin(input_value):
+            if check_input(input_value):
                 open_door()
             else:
                 logging.debug(f"Invalid input: {input_value}")

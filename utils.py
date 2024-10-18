@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import sys
 import hashlib
+import secrets
 
 load_dotenv()
 
@@ -43,6 +44,10 @@ def unlock_door(duration=RELAY_ACTIVATION_TIME):
     time.sleep(duration)
     GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
     GPIO.cleanup()
+
+
+def generate_salt(length=16):
+    return secrets.token_hex(length)
 
 
 def hash_secret(payload, salt=None):

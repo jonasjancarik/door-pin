@@ -110,7 +110,7 @@ class AuthResponse(BaseModel):
 class RFIDCreate(BaseModel):
     uuid: str
     label: str
-    user_email: Optional[EmailStr] = None
+    user_id: Optional[int] = None
 
 
 class RFIDResponse(BaseModel):
@@ -570,27 +570,46 @@ def delete_user(user_id: int, current_user: db.User = Depends(authenticate_user)
 def create_rfid(
     rfid_request: RFIDCreate, current_user: db.User = Depends(authenticate_user)
 ):
-    hashed_uuid = utils.hash_secret(payload=rfid_request.uuid)
+    salt = utils.generate_salt()
+    hashed_uuid = utils.hash_secret(payload=rfid_request.uuid, salt=salt)
     last_four_digits = rfid_request.uuid[-4:]
 
-    if rfid_request.user_email:
-        if current_user.role != "admin":
-            raise APIException(
-                status_code=403,
-                detail="Only admin users can create RFIDs for other users",
-            )
-
-        target_user = db.get_user(rfid_request.user_email)
+    if rfid_request.user_id:
+        target_user = db.get_user(rfid_request.user_id)
         if not target_user:
             raise APIException(status_code=404, detail="User not found")
-        user_id = target_user.id
+
+        if current_user.role == "admin":
+            # Admins can create RFIDs for any user
+            user_id = target_user.id
+        elif current_user.role == "apartment_admin":
+            # Apartment admins can only create RFIDs for users in their apartment
+            if target_user.apartment_id != current_user.apartment_id:
+                raise APIException(
+                    status_code=403,
+                    detail="Cannot create RFIDs for users from other apartments",
+                )
+            user_id = target_user.id
+        else:
+            raise APIException(
+                status_code=403,
+                detail="Insufficient permissions to create RFIDs for other users",
+            )
     else:
+        # If no user_id is provided, create RFID for the current user
         user_id = current_user.id
 
-    db.save_rfid(user_id, hashed_uuid, last_four_digits, rfid_request.label)
+    rfid = db.save_rfid(
+        user_id, hashed_uuid, salt, last_four_digits, rfid_request.label
+    )
     return {
         "status": "RFID created",
-        "user_email": rfid_request.user_email or current_user.email,
+        "rfid": {
+            "id": rfid.id,
+            "label": rfid.label,
+            "user_id": user_id,
+            "last_four_digits": last_four_digits,
+        },
     }
 
 
@@ -690,13 +709,38 @@ def list_user_rfids(
 
 
 @app.post("/pins", status_code=status.HTTP_201_CREATED)
-def create_pin(pin_request: PINCreate, user: db.User = Depends(authenticate_user)):
-    hashed_pin = utils.hash_secret(payload=pin_request.pin)
-    if not pin_request.user_id:
-        user_id = db.get_user(user.email).id
+def create_pin(
+    pin_request: PINCreate, current_user: db.User = Depends(authenticate_user)
+):
+    salt = utils.generate_salt()
+    hashed_pin = utils.hash_secret(payload=pin_request.pin, salt=salt)
+
+    if pin_request.user_id:
+        target_user = db.get_user(pin_request.user_id)
+        if not target_user:
+            raise APIException(status_code=404, detail="User not found")
+
+        if current_user.role == "admin":
+            # Admins can create PINs for any user
+            user_id = target_user.id
+        elif current_user.role == "apartment_admin":
+            # Apartment admins can only create PINs for users in their apartment
+            if target_user.apartment_id != current_user.apartment_id:
+                raise APIException(
+                    status_code=403,
+                    detail="Cannot create PINs for users from other apartments",
+                )
+            user_id = target_user.id
+        else:
+            raise APIException(
+                status_code=403,
+                detail="Insufficient permissions to create PINs for other users",
+            )
     else:
-        user_id = pin_request.user_id
-    pin = db.save_pin(user_id, hashed_pin, pin_request.label)
+        # If no user_id is provided, create PIN for the current user
+        user_id = current_user.id
+
+    pin = db.save_pin(user_id, hashed_pin, pin_request.label, salt)
     return {
         "status": "PIN saved",
         "pin": {"id": pin.id, "label": pin.label, "user_id": user_id},
@@ -707,8 +751,9 @@ def create_pin(pin_request: PINCreate, user: db.User = Depends(authenticate_user
 def update_pin(
     pin_id: int, pin_request: PINCreate, user: db.User = Depends(authenticate_user)
 ):
-    hashed_pin = utils.hash_secret(payload=pin_request.pin)
-    pin = db.update_pin(pin_id, hashed_pin, pin_request.label)
+    salt = utils.generate_salt()
+    hashed_pin = utils.hash_secret(payload=pin_request.pin, salt=salt)
+    pin = db.update_pin(pin_id, hashed_pin, pin_request.label, salt)
     if pin:
         return {"status": "PIN updated", "pin_id": pin.id}
     raise APIException(status_code=404, detail="PIN not found")

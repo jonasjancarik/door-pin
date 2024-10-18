@@ -87,6 +87,7 @@ class Rfid(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     hashed_uuid = Column(String, nullable=False)
+    salt = Column(String, nullable=False)
     last_four_digits = Column(String(4), nullable=False)
     label = Column(String)
     created_at = Column(
@@ -103,6 +104,7 @@ class Pin(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     hashed_pin = Column(String, nullable=False)
+    salt = Column(String, nullable=False)
     label = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     user = relationship("User", back_populates="pins", lazy="joined")
@@ -283,7 +285,7 @@ def extend_token_expiration(token, new_expiration):
         return False
 
 
-def save_rfid(user_id, hashed_uuid, last_four_digits, label):
+def save_rfid(user_id, hashed_uuid, salt, last_four_digits, label):
     with get_db() as db:
         new_rfid = Rfid(
             user_id=user_id,
@@ -410,9 +412,9 @@ def save_login_code(user_id, code_hash, expiration):
         return new_code
 
 
-def save_pin(user_id, hashed_pin, label):
+def save_pin(user_id, hashed_pin, label, salt):
     with get_db() as db:
-        new_pin = Pin(user_id=user_id, hashed_pin=hashed_pin, label=label)
+        new_pin = Pin(user_id=user_id, hashed_pin=hashed_pin, label=label, salt=salt)
         db.add(new_pin)
         db.commit()
         db.refresh(new_pin)
@@ -425,12 +427,13 @@ def get_pin(pin_id):
         return db.query(Pin).filter(Pin.id == pin_id).first()
 
 
-def update_pin(pin_id, hashed_pin, label):
+def update_pin(pin_id, hashed_pin, label, salt):
     with get_db() as db:
         pin = db.query(Pin).filter(Pin.id == pin_id).first()
         if pin:
             pin.hashed_pin = hashed_pin
             pin.label = label
+            pin.salt = salt
             db.commit()
             db.refresh(pin)
             logger.info(f"Pin {label} updated for pin {pin_id}")
