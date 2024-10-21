@@ -67,7 +67,7 @@ def check_input(input_value):
     return False
 
 
-async def main():
+async def run_listener():
     while True:
         print("Waiting for a complete PIN or RFID input...", flush=True)
 
@@ -87,4 +87,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_listener())
