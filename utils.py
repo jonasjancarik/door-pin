@@ -6,6 +6,7 @@ import sys
 import hashlib
 import secrets
 import logging
+import asyncio
 
 load_dotenv()
 
@@ -43,12 +44,12 @@ except Exception as e:
         )
 
 
-def unlock_door(duration=RELAY_ACTIVATION_TIME):
+async def unlock_door(duration=RELAY_ACTIVATION_TIME):
     logging.info("Activating relay.")
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(RELAY_PIN, GPIO.OUT)
     GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
-    time.sleep(duration)
+    await asyncio.sleep(duration)
     GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
     GPIO.cleanup()
     logging.info("Relay deactivated.")

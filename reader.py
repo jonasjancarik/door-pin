@@ -22,7 +22,7 @@ INPUT_TIMEOUT = int(os.getenv("INPUT_TIMEOUT", 10))
 def open_door():
     """Activate the relay to open the door."""
     logging.info("PIN or RFID correct! Activating relay.")
-    utils.unlock_door()
+    asyncio.create_task(utils.unlock_door())
     logging.info("Relay deactivated.")
 
 
@@ -61,8 +61,10 @@ async def run_reader():
                     input_value = await read_input(timeout=INPUT_TIMEOUT)
                 if input_value:
                     # Process the input_value
-                    if check_input(input_value):
-                        open_door()
+                    if (
+                        check_input(input_value) is True
+                    ):  # important to compare with True, not just if ... because if e.g. we change check_input to an async function and not await it properly, it will return a coroutine and not True. This bug would mean that the door would open for any input.
+                        asyncio.create_task(utils.unlock_door())
                         logging.info(f"Door opened for input: {input_value}")
                     else:
                         logging.debug(f"Invalid input: {input_value}")
@@ -82,10 +84,7 @@ def start_reader():
     global reader_task, task_running
     if not task_running:
         task_running = True
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
         reader_task = loop.create_task(run_reader())
         logging.info("Reader started")
     else:

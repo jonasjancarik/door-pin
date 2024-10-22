@@ -23,6 +23,7 @@ from datetime import date, time
 from typing import List
 import time as time_module
 from reader import start_reader, stop_reader, get_reader_status, input_lock
+import asyncio
 
 load_dotenv()
 
@@ -454,9 +455,9 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
 
 
 @app.post("/doors/unlock", status_code=status.HTTP_200_OK)
-def unlock_door(_: db.User = Depends(authenticate_user)):
-    utils.unlock_door()
-    return {"message": "Door unlocked successfully"}
+async def unlock_door(_: db.User = Depends(authenticate_user)):
+    asyncio.create_task(utils.unlock_door())
+    return {"message": "Door unlock initiated"}
 
 
 @app.post("/users", status_code=status.HTTP_201_CREATED)
