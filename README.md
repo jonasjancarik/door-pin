@@ -87,13 +87,6 @@ ssh -R 8000:localhost:8000 <server>
 
 Run `python setup.py` to create the database and set up the first user. You can also use a CSV file with usernames and PIN codes to create multiple users at once - use the `users.csv.example` as a template.
 
-### API and local listener
+### Launching the API server
 
-Launch the API server with `uvicorn api:app --reload` and the local PIN/RFID listener script with `python listen.py`.
-
-### Management using the command-line interface
-
-Use:
-
-- `pin.py` for managing PIN codes
-- `rfid.py` for managing RFID keytags or cards
+Launch the API server with `uvicorn api:app` (or with the `--reload` flag for development).
