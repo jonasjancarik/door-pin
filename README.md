@@ -89,4 +89,6 @@ Run `python setup.py` to create the database and set up the first user. You can 
 
 ### Launching the API server
 
-Launch the API server with `uvicorn api:app` (or with the `--reload` flag for development).
+Launch the API server with `uvicorn api:app` (or with the `--reload` flag for development). 
+
+You need to obtain a bearer token first to use the API directly - you can do it through the web app and extracting the bearer token from the `Authorization` header of the requests. This isn't ideal for development, so I am planning to add an environment variable to enable unauthenticated access to the API for development purposes.
