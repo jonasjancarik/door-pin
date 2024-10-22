@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, joinedload
 from contextlib import contextmanager
-import utils
+import src.utils as utils
 from dotenv import load_dotenv
 
 load_dotenv()

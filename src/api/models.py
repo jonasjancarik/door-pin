@@ -1,0 +1,124 @@
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List
+from datetime import date, time
+
+# Include all the Pydantic models here
+# (LoginRequest, LoginCodeAttempt, AuthResponse, RFIDCreate, RFIDResponse, etc.)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+
+
+class LoginCodeAttempt(BaseModel):
+    email: EmailStr
+    login_code: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: dict
+
+
+class RFIDCreate(BaseModel):
+    uuid: str
+    label: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+class RFIDResponse(BaseModel):
+    id: int
+    label: str
+    created_at: str
+    user_id: int
+    user_email: str
+    last_four_digits: str
+
+
+class PINCreate(BaseModel):
+    pin: str
+    label: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+class PINResponse(BaseModel):
+    id: int
+    label: str
+    created_at: str
+    user_id: int
+    user_email: str
+
+
+class PINUpdate(BaseModel):
+    pin: Optional[str]
+    label: Optional[str]
+
+
+class ApartmentCreate(BaseModel):
+    number: str
+    description: Optional[str] = None
+
+
+class ApartmentResponse(BaseModel):
+    id: int
+    number: str
+    description: Optional[str]
+
+
+class ApartmentUpdate(BaseModel):
+    number: Optional[str]
+    description: Optional[str] = None
+
+
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    apartment: ApartmentCreate
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: str
+    apartment_number: int
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str]
+    email: Optional[EmailStr]
+    role: Optional[str]
+    apartment_number: Optional[int]
+
+
+class RecurringScheduleCreate(BaseModel):
+    day_of_week: int
+    start_time: time
+    end_time: time
+
+
+class OneTimeAccessCreate(BaseModel):
+    access_date: date
+    start_time: time
+    end_time: time
+
+
+class RecurringScheduleResponse(BaseModel):
+    id: int
+    day_of_week: int
+    start_time: str
+    end_time: str
+
+
+class OneTimeAccessResponse(BaseModel):
+    id: int
+    access_date: str
+    start_time: str
+    end_time: str
+
+
+class GuestSchedulesResponse(BaseModel):
+    recurring_schedules: List[RecurringScheduleResponse]
+    one_time_access: List[OneTimeAccessResponse]
