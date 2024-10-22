@@ -48,9 +48,12 @@ def decode_keypad_input(input_sequence):
 
 
 async def read_input(timeout=None):
+    # async with input_lock:
     if INPUT_MODE == "stdin":
+        logging.info("Reading input from stdin")
         return await read_stdin(timeout)
     else:
+        logging.info("Reading input from evdev")
         return await read_evdev(timeout)
 
 

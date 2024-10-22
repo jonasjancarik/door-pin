@@ -1,39 +1,22 @@
-import asyncio
-import logging
 import utils
-import argparse
 from dotenv import load_dotenv
 import os
 from collections import deque
 from db import get_all_pins, get_all_rfids
 from input_handler import read_input
+from utils import logging
+import asyncio
 
 load_dotenv()
 
+input_lock = asyncio.Lock()
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--timeout", type=int, default=10, help="Input timeout in seconds"
-    )
-    parser.add_argument("--pin-length", type=int, default=4, help="PIN length")
-    parser.add_argument(
-        "--rfid-length",
-        type=int,
-        help="RFID length (overrides RFID_LENGTH env var). Defaults to 10 even without the env var.",
-    )
-    parser.add_argument("--debug", action="store_true", help="Enable debug output")
-    return parser.parse_args()
+reader_task = None
+task_running = False
 
-
-args = parse_args()
-RFID_LENGTH = args.rfid_length or int(os.getenv("RFID_LENGTH", 10))
+RFID_LENGTH = int(os.getenv("RFID_LENGTH", 10))
 INPUT_MODE = os.getenv("INPUT_MODE", "standard")
-
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", logging.INFO),
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+INPUT_TIMEOUT = int(os.getenv("INPUT_TIMEOUT", 10))
 
 
 def open_door():
@@ -67,24 +50,57 @@ def check_input(input_value):
     return False
 
 
-async def run_listener():
-    while True:
-        print("Waiting for a complete PIN or RFID input...", flush=True)
+async def run_reader():
+    global reader_status
+    reader_status = "running"
+    try:
+        while task_running:
+            print("Waiting for a complete PIN or RFID input...", flush=True)
+            try:
+                async with input_lock:
+                    input_value = await read_input(timeout=INPUT_TIMEOUT)
+                if input_value:
+                    # Process the input_value
+                    if check_input(input_value):
+                        open_door()
+                        logging.info(f"Door opened for input: {input_value}")
+                    else:
+                        logging.debug(f"Invalid input: {input_value}")
+                else:
+                    logging.info("Input timeout or no input received.")
+            except asyncio.CancelledError:
+                logging.info("Reader task cancelled")
+                break
+            except Exception as e:
+                logging.error(f"Exception in run_reader: {e}")
+                break
+    finally:
+        reader_status = "stopped"
 
-        input_value = await read_input(timeout=args.timeout)
 
-        if input_value:
-            if os.getenv("DEBUG"):
-                print(f"Input received: {input_value}")
-            else:
-                print("Input received...", flush=True)
-            if check_input(input_value):
-                open_door()
-            else:
-                logging.debug(f"Invalid input: {input_value}")
-        else:
-            logging.info("Input timeout or no input received.")
+def start_reader():
+    global reader_task, task_running
+    if not task_running:
+        task_running = True
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+        reader_task = loop.create_task(run_reader())
+        logging.info("Reader started")
+    else:
+        logging.warning("Reader is already running")
 
 
-if __name__ == "__main__":
-    asyncio.run(run_listener())
+def stop_reader():
+    global task_running
+    if task_running:
+        task_running = False
+        logging.info("Reader stop requested")
+    else:
+        logging.warning("Reader is not running")
+
+
+def get_reader_status():
+    global task_running
+    return "running" if task_running else "stopped"

@@ -5,8 +5,14 @@ import os
 import sys
 import hashlib
 import secrets
+import logging
 
 load_dotenv()
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", logging.INFO),
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 # config
 try:
@@ -38,12 +44,14 @@ except Exception as e:
 
 
 def unlock_door(duration=RELAY_ACTIVATION_TIME):
+    logging.info("Activating relay.")
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(RELAY_PIN, GPIO.OUT)
     GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
     time.sleep(duration)
     GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
     GPIO.cleanup()
+    logging.info("Relay deactivated.")
 
 
 def generate_salt(length=16):

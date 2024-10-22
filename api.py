@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from datetime import date, time
 from typing import List
 import time as time_module
+from listen import start_reader, stop_reader, get_reader_status, input_lock
 
 load_dotenv()
 
@@ -35,8 +36,9 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db()
+    start_reader()
     yield
+    stop_reader()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -258,6 +260,41 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
+def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
+    if user := db.get_user_by_token(web_app_token):
+        return user
+    raise APIException(status_code=401, detail="Unauthorized")
+
+
+@app.post("/reader/start", status_code=status.HTTP_200_OK)
+async def start_reader_endpoint(current_user: db.User = Depends(authenticate_user)):
+    if current_user.role != "admin":
+        raise APIException(status_code=403, detail="Admin access required")
+    if get_reader_status() == "running":
+        raise APIException(status_code=400, detail="Reader is already running")
+    start_reader()
+    return {"message": "Reader started successfully"}
+
+
+@app.post("/reader/stop", status_code=status.HTTP_200_OK)
+async def stop_reader_endpoint(current_user: db.User = Depends(authenticate_user)):
+    if current_user.role != "admin":
+        raise APIException(status_code=403, detail="Admin access required")
+    if get_reader_status() == "stopped":
+        raise APIException(status_code=400, detail="Reader is not running")
+    stop_reader()
+    return {"message": "Reader stopped successfully"}
+
+
+@app.get("/reader/status", status_code=status.HTTP_200_OK)
+async def get_reader_status_endpoint(
+    current_user: db.User = Depends(authenticate_user),
+):
+    if current_user.role != "admin":
+        raise APIException(status_code=403, detail="Admin access required")
+    return {"status": get_reader_status()}
+
+
 @app.post("/auth/magic-links", status_code=status.HTTP_202_ACCEPTED)
 def send_magic_link(request: LoginRequest):
     success_message = (
@@ -329,12 +366,6 @@ def send_magic_link(request: LoginRequest):
             status_code=500,
             detail="An unexpected error occurred while sending the email.",
         )
-
-
-def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
-    if user := db.get_user_by_token(web_app_token):
-        return user
-    raise APIException(status_code=401, detail="Unauthorized")
 
 
 @app.post("/auth/verify", status_code=status.HTTP_200_OK)
@@ -617,7 +648,8 @@ def create_rfid(
 async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
-        rfid_uuid = await read_input(timeout=timeout if timeout <= 30 else 30)
+        async with input_lock:
+            rfid_uuid = await read_input(timeout=min(timeout, 30))
         if not rfid_uuid:
             logging.warning("RFID not found within the timeout period")
             raise APIException(status_code=404, detail="RFID not found")
