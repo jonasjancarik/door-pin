@@ -43,18 +43,22 @@ def create_rfid(
     else:
         # If no user_id is provided, create RFID for the current user
         user_id = current_user.id
+        target_user = current_user
 
     rfid = db.save_rfid(
         user_id, hashed_uuid, salt, last_four_digits, rfid_request.label
     )
     return {
         "status": "RFID created",
-        "rfid": {
-            "id": rfid.id,
-            "label": rfid.label,
-            "user_id": user_id,
-            "last_four_digits": last_four_digits,
-        },
+        "rfid": RFIDResponse(
+            id=rfid.id,
+            label=rfid.label,
+            created_at=str(rfid.created_at),
+            user_id=user_id,
+            user_email=target_user.email,
+            last_four_digits=last_four_digits,
+        ),
+        "user": user_return_format(target_user),
     }
 
 
@@ -113,13 +117,13 @@ def list_rfids(current_user: db.User = Depends(authenticate_user)):
         raise APIException(status_code=403, detail="Guests cannot list RFIDs")
 
     return [
-        {
-            "id": rfid.id,
-            "label": rfid.label,
-            "created_at": rfid.created_at,
-            "user_id": rfid.user_id,
-            "user_email": rfid.user.email,
-            "last_four_digits": rfid.last_four_digits,
-        }
+        RFIDResponse(
+            id=rfid.id,
+            label=rfid.label,
+            created_at=str(rfid.created_at),
+            user_id=rfid.user_id,
+            user_email=rfid.user.email,
+            last_four_digits=rfid.last_four_digits,
+        )
         for rfid in rfids
     ]

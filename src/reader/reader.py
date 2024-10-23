@@ -1,7 +1,5 @@
 import src.utils as utils
 from dotenv import load_dotenv
-import os
-from collections import deque
 from src.db import get_all_pins, get_all_rfids
 from src.reader.input_handler import read_input
 from src.utils import logging
