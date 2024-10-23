@@ -122,3 +122,23 @@ class OneTimeAccessResponse(BaseModel):
 class GuestSchedulesResponse(BaseModel):
     recurring_schedules: List[RecurringScheduleResponse]
     one_time_access: List[OneTimeAccessResponse]
+
+
+class APIKeyCreate(BaseModel):
+    description: str
+    user_id: Optional[int] = None
+
+
+class APIKeyResponse(BaseModel):
+    key_prefix: str
+    description: str
+    created_at: str
+    is_active: bool
+    user_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyWithSecret(APIKeyResponse):
+    api_key: str
