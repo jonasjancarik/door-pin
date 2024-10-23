@@ -5,10 +5,10 @@ import os
 from dotenv import load_dotenv
 
 try:
-    from evdev import InputDevice, categorize, ecodes, list_devices
+    from evdev import InputDevice, categorize, ecodes, list_devices  # type: ignore
 except ImportError:
     logging.error(
-        "Failed to import evdev. Make sure you have the evdev library installed."
+        "Failed to import evdev. Make sure you have the evdev library installed in production."
     )
     pass
 

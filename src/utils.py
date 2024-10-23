@@ -63,7 +63,7 @@ async def unlock_door(duration=RELAY_ACTIVATION_TIME):
         try:
             GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
             GPIO.cleanup()
-        except:
+        except:  # noqa: E722
             pass
         raise
 
