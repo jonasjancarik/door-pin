@@ -1,5 +1,5 @@
 from fastapi import APIRouter, status, Response
-from ..models import PINCreate, PINResponse, PINUpdate
+from ..models import PINCreate, PINResponse, PINUpdate, User
 from ..exceptions import APIException
 
 import src.db as db
@@ -9,7 +9,7 @@ router = APIRouter(prefix="/pins", tags=["pins"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PINResponse)
-def create_pin(pin_request: PINCreate, current_user: db.User):
+def create_pin(pin_request: PINCreate, current_user: User):
     salt = utils.generate_salt()
     hashed_pin = utils.hash_secret(payload=pin_request.pin, salt=salt)
 
@@ -50,12 +50,12 @@ def create_pin(pin_request: PINCreate, current_user: db.User):
 
 
 @router.patch("/{pin_id}", status_code=status.HTTP_200_OK)
-def update_pin(pin_id: int, pin_request: PINUpdate, user: db.User):
+def update_pin(pin_id: int, pin_request: PINUpdate, current_user: User):
     pin = db.get_pin(pin_id)
     if not pin:
         raise APIException(status_code=404, detail="PIN not found")
 
-    if user.role != "admin" and pin.user_id != user.id:
+    if current_user.role != "admin" and pin.user_id != current_user.id:
         raise APIException(
             status_code=403, detail="Insufficient permissions to update this PIN"
         )  # todo: apartment admins should be able to update their own apartment's users' PINs
@@ -73,7 +73,7 @@ def update_pin(pin_id: int, pin_request: PINUpdate, user: db.User):
 
 
 @router.delete("/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_pin(pin_id: int, current_user: db.User):
+def delete_pin(pin_id: int, current_user: User):
     pin = db.get_pin(pin_id)
     if not pin:
         raise APIException(status_code=404, detail="PIN not found")
@@ -103,7 +103,7 @@ def delete_pin(pin_id: int, current_user: db.User):
 
 
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[PINResponse])
-def list_pins(current_user: db.User):
+def list_pins(current_user: User):
     if current_user.role == "admin":
         pins = db.get_all_pins()
     elif current_user.role == "apartment_admin":

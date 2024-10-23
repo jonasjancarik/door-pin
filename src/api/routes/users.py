@@ -1,5 +1,10 @@
 from fastapi import APIRouter, status, Response, Path
-from ..models import UserCreate, UserResponse, UserUpdate
+from ..models import (
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+    User,
+)  # Import the Pydantic User model
 from ..exceptions import APIException
 import src.db as db
 
@@ -7,7 +12,9 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
-def create_user(new_user: UserCreate, current_user: db.User):
+def create_user(
+    new_user: UserCreate, current_user: User
+):  # Use the Pydantic User model
     if current_user.role == "guest":
         raise APIException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
@@ -68,7 +75,7 @@ def create_user(new_user: UserCreate, current_user: db.User):
 
 
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[UserResponse])
-def list_users(current_user: db.User):
+def list_users(current_user: User):  # Use the Pydantic User model
     if current_user.role == "admin":
         users = db.get_all_users()
     elif current_user.role == "apartment_admin":
@@ -89,7 +96,7 @@ def list_users(current_user: db.User):
 
 
 @router.get("/{user_id}", status_code=status.HTTP_200_OK, response_model=UserResponse)
-def get_user(user_id: int, current_user: db.User):
+def get_user(user_id: int, current_user: User):
     user = db.get_user(user_id)
     if not user:
         raise APIException(status_code=404, detail="User not found")
@@ -115,7 +122,7 @@ def get_user(user_id: int, current_user: db.User):
 
 
 @router.put("/{user_id}", status_code=status.HTTP_200_OK, response_model=UserResponse)
-def update_user(user_id: int, updated_user: UserUpdate, current_user: db.User):
+def update_user(user_id: int, updated_user: UserUpdate, current_user: User):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
     try:
@@ -137,7 +144,7 @@ def update_user(user_id: int, updated_user: UserUpdate, current_user: db.User):
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, current_user: db.User):
+def delete_user(user_id: int, current_user: User):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 
@@ -162,7 +169,7 @@ def delete_user(user_id: int, current_user: db.User):
 
 @router.get("/{user_id}/rfids", status_code=status.HTTP_200_OK)
 def list_user_rfids(
-    current_user: db.User,
+    current_user: User,
     user_id: int = Path(..., description="The ID of the user whose RFIDs to list"),
 ):
     if current_user.role == "admin":
@@ -190,7 +197,7 @@ def list_user_rfids(
 
 @router.get("/{user_id}/pins", status_code=status.HTTP_200_OK)
 def list_user_pins(
-    current_user: db.User,
+    current_user: User,
     user_id: int = Path(..., description="User ID to fetch pins for"),
 ):
     if current_user.role == "admin":

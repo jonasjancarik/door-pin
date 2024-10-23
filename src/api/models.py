@@ -71,6 +71,18 @@ class ApartmentUpdate(BaseModel):
     description: Optional[str] = None
 
 
+class User(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    apartment_id: int
+    apartment: ApartmentResponse
+
+    class Config:
+        orm_mode = True  # This tells Pydantic to work with ORM models
+
+
 class UserCreate(BaseModel):
     name: str
     email: EmailStr
@@ -142,3 +154,8 @@ class APIKeyResponse(BaseModel):
 
 class APIKeyWithSecret(APIKeyResponse):
     api_key: str
+
+
+class VerifyAuthResponse(BaseModel):
+    status: str
+    user: dict

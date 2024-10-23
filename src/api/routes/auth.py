@@ -1,8 +1,14 @@
 from fastapi import APIRouter, Request, status, Response, Depends
 from fastapi.security import OAuth2PasswordBearer
-from ..models import LoginRequest, LoginCodeAttempt, AuthResponse
+from ..models import (
+    LoginRequest,
+    LoginCodeAttempt,
+    AuthResponse,
+    VerifyAuthResponse,
+    User,
+)
 from ..exceptions import APIException
-from ..dependencies import get_current_token
+from ..dependencies import get_current_token, get_current_user
 from ..utils import check_rate_limit, user_return_format
 import src.db as db
 import src.utils as utils
@@ -92,20 +98,27 @@ def send_magic_link(request: LoginRequest):
         )
 
 
-@router.post("/verify", status_code=status.HTTP_200_OK)
-def verify_authentication(request: Request, user: db.User):
+@router.post(
+    "/verify", status_code=status.HTTP_200_OK, response_model=VerifyAuthResponse
+)
+def verify_authentication(
+    request: Request,
+    current_user: User = Depends(get_current_user),  # Add the dependency here
+):
     current_token = get_current_token(request)
     new_expiration = int(time_module.time()) + 31536000  # 1 year from now
     db.extend_token_expiration(current_token, new_expiration)
-    return {"status": "authenticated", "user": user_return_format(user)}
+    return VerifyAuthResponse(
+        status="authenticated", user=user_return_format(current_user)
+    )
 
 
 @router.delete("/tokens/current", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
-    user: db.User,
+    current_user: User = Depends(get_current_user),
     current_token: str = Depends(get_current_token),
 ):
-    email = user.email
+    email = current_user.email
     user = db.get_user(email)
     if user:
         tokens = user.tokens if user.tokens else []

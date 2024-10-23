@@ -3,6 +3,7 @@ from ..models import (
     RecurringScheduleCreate,
     OneTimeAccessCreate,
     GuestSchedulesResponse,
+    User,
 )
 from ..exceptions import APIException
 import src.db as db
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/guests", tags=["guests"])
 def create_recurring_schedule(
     user_id: int,
     schedule: RecurringScheduleCreate,
-    current_user: db.User,
+    current_user: User,
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
@@ -42,7 +43,7 @@ def create_recurring_schedule(
 def create_one_time_access(
     user_id: int,
     access: OneTimeAccessCreate,
-    current_user: db.User,
+    current_user: User,
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
@@ -67,7 +68,7 @@ def create_one_time_access(
 
 
 @router.get("/{user_id}/schedules", status_code=status.HTTP_200_OK)
-def list_guest_schedules(user_id: int, current_user: db.User):
+def list_guest_schedules(user_id: int, current_user: User):
     if (
         current_user.role not in ["admin", "apartment_admin"]
         and current_user.id != user_id
@@ -115,7 +116,7 @@ def list_guest_schedules(user_id: int, current_user: db.User):
 @router.delete(
     "/recurring-schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-def delete_recurring_schedule(schedule_id: int, current_user: db.User):
+def delete_recurring_schedule(schedule_id: int, current_user: User):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 
@@ -137,7 +138,7 @@ def delete_recurring_schedule(schedule_id: int, current_user: db.User):
 
 
 @router.delete("/one-time-accesses/{access_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_one_time_access(access_id: int, current_user: db.User):
+def delete_one_time_access(access_id: int, current_user: User):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 

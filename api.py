@@ -40,10 +40,12 @@ app.add_middleware(
 )
 
 # Create a new router for authenticated routes
-authenticated_router = APIRouter()
+authenticated_router = APIRouter(dependencies=[Depends(get_current_user)])
+
+# Include the users router in the authenticated router
+authenticated_router.include_router(users_router)
 
 # Include all routers that require authentication
-authenticated_router.include_router(users_router)
 authenticated_router.include_router(rfids_router)
 authenticated_router.include_router(pins_router)
 authenticated_router.include_router(apartments_router)
@@ -52,8 +54,8 @@ authenticated_router.include_router(doors_router)
 authenticated_router.include_router(reader_router)
 authenticated_router.include_router(api_keys_router)
 
-# Add the authentication dependency to the authenticated router
-app.include_router(authenticated_router, dependencies=[Depends(get_current_user)])
+# Add the authenticated router to the app
+app.include_router(authenticated_router)
 
 # Include the auth router separately (it contains the /magic-links and /tokens endpoints)
 app.include_router(auth_router)

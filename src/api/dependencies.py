@@ -34,14 +34,25 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
             return api_key_obj.user
 
     # If no API key or invalid, fall back to bearer token authentication
-    return await authenticate_user(request, db)
+    authorization: str = request.headers.get("Authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise APIException(status_code=401, detail="No valid authentication provided")
+
+    token = authorization.replace("Bearer ", "")
+    user = db.query(User).filter(User.token == token).first()
+    if user:
+        return user
+    raise APIException(status_code=401, detail="Invalid authentication")
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-def authenticate_user(web_app_token: str = Depends(oauth2_scheme)) -> db.User:
-    if user := db.get_user_by_token(web_app_token):
+def authenticate_user(
+    web_app_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> db.User:
+    user = db.query(User).filter(User.token == web_app_token).first()
+    if user:
         return user
     raise APIException(status_code=401, detail="Unauthorized")
 
