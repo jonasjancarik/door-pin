@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends, status, Response
+from fastapi import APIRouter, status, Response
 from ..models import RFIDCreate, RFIDResponse
 from ..exceptions import APIException
-from ..dependencies import authenticate_user
 from ..utils import user_return_format
 import src.db as db
 import src.utils as utils
@@ -12,9 +11,7 @@ router = APIRouter(prefix="/rfids", tags=["rfids"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_rfid(
-    rfid_request: RFIDCreate, current_user: db.User = Depends(authenticate_user)
-):
+def create_rfid(rfid_request: RFIDCreate, current_user: db.User):
     salt = utils.generate_salt()
     hashed_uuid = utils.hash_secret(payload=rfid_request.uuid, salt=salt)
     last_four_digits = rfid_request.uuid[-4:]
@@ -63,7 +60,7 @@ def create_rfid(
 
 
 @router.get("/read", status_code=status.HTTP_200_OK)
-async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
+async def read_rfid(timeout: int, user: db.User):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
         rfid_uuid = await read_single_input(timeout=min(timeout, 30))
@@ -78,7 +75,7 @@ async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
 
 
 @router.delete("/{rfid_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_rfid(rfid_id: int, current_user: db.User = Depends(authenticate_user)):
+def delete_rfid(rfid_id: int, current_user: db.User):
     rfid = db.get_rfid(rfid_id)
     if not rfid:
         raise APIException(status_code=404, detail="RFID not found")
@@ -108,7 +105,7 @@ def delete_rfid(rfid_id: int, current_user: db.User = Depends(authenticate_user)
 
 
 @router.get("", status_code=status.HTTP_200_OK)
-def list_rfids(current_user: db.User = Depends(authenticate_user)):
+def list_rfids(current_user: db.User):
     if current_user.role == "admin":
         rfids = db.get_all_rfids()
     elif current_user.role == "apartment_admin":

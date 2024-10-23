@@ -1,7 +1,41 @@
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Security
 from fastapi.security import OAuth2PasswordBearer
 from .exceptions import APIException
 import src.db as db
+from fastapi.security import APIKeyHeader
+from sqlalchemy.orm import Session
+from src.db import get_db
+from src.api.utils import verify_api_key
+from src.db import User
+
+api_key_header = APIKeyHeader(name="X-API-Key")
+
+
+async def get_current_user_from_api_key(
+    api_key: str = Security(api_key_header), db: Session = Depends(get_db)
+) -> User:
+    api_key_obj = verify_api_key(db, api_key)
+    if not api_key_obj:
+        raise APIException(status_code=401, detail="Invalid API Key")
+    return api_key_obj.user
+
+
+async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    # Check for API key in header
+    api_key = request.headers.get("X-API-Key")
+
+    # Check for API key in query parameters if not in header
+    if not api_key:
+        api_key = request.query_params.get("api_key")
+
+    if api_key:
+        api_key_obj = verify_api_key(db, api_key)
+        if api_key_obj:
+            return api_key_obj.user
+
+    # If no API key or invalid, fall back to bearer token authentication
+    return await authenticate_user(request, db)
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 

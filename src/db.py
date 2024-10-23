@@ -11,6 +11,8 @@ from sqlalchemy import (
     DateTime,
     Date,
     Time,
+    Boolean,
+    func,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, joinedload
 from contextlib import contextmanager
@@ -79,6 +81,7 @@ class User(Base):
     login_codes = relationship("LoginCode", back_populates="user")
     recurring_schedule = relationship("RecurringSchedule", back_populates="user")
     one_time_access = relationship("OneTimeAccess", back_populates="user")
+    api_keys = relationship("APIKey", back_populates="user")
 
 
 @add_getitem
@@ -150,6 +153,19 @@ class OneTimeAccess(Base):
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     user = relationship("User", back_populates="one_time_access")
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    key_prefix = Column(String(8), primary_key=True)
+    key_hash = Column(String(64), nullable=False)
+    description = Column(String(200))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+
+    user = relationship("User", back_populates="api_keys")
 
 
 def init_db():

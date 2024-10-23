@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, status, Response
+from fastapi import APIRouter, status, Response
 from ..models import (
     RecurringScheduleCreate,
     OneTimeAccessCreate,
     GuestSchedulesResponse,
 )
 from ..exceptions import APIException
-from ..dependencies import authenticate_user
 import src.db as db
 
 router = APIRouter(prefix="/guests", tags=["guests"])
@@ -15,7 +14,7 @@ router = APIRouter(prefix="/guests", tags=["guests"])
 def create_recurring_schedule(
     user_id: int,
     schedule: RecurringScheduleCreate,
-    current_user: db.User = Depends(authenticate_user),
+    current_user: db.User,
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
@@ -43,7 +42,7 @@ def create_recurring_schedule(
 def create_one_time_access(
     user_id: int,
     access: OneTimeAccessCreate,
-    current_user: db.User = Depends(authenticate_user),
+    current_user: db.User,
 ):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
@@ -68,9 +67,7 @@ def create_one_time_access(
 
 
 @router.get("/{user_id}/schedules", status_code=status.HTTP_200_OK)
-def list_guest_schedules(
-    user_id: int, current_user: db.User = Depends(authenticate_user)
-):
+def list_guest_schedules(user_id: int, current_user: db.User):
     if (
         current_user.role not in ["admin", "apartment_admin"]
         and current_user.id != user_id
@@ -118,9 +115,7 @@ def list_guest_schedules(
 @router.delete(
     "/recurring-schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-def delete_recurring_schedule(
-    schedule_id: int, current_user: db.User = Depends(authenticate_user)
-):
+def delete_recurring_schedule(schedule_id: int, current_user: db.User):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 
@@ -142,9 +137,7 @@ def delete_recurring_schedule(
 
 
 @router.delete("/one-time-accesses/{access_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_one_time_access(
-    access_id: int, current_user: db.User = Depends(authenticate_user)
-):
+def delete_one_time_access(access_id: int, current_user: db.User):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 

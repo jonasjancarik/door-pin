@@ -1,10 +1,46 @@
 from collections import defaultdict
 import time
 from fastapi import HTTPException
+import hashlib
+from src.db import APIKey
 
 rate_limit = defaultdict(list)
 MAX_ATTEMPTS = 5
 RATE_LIMIT_DURATION = 60  # 1 minute
+
+
+def verify_api_key(db, api_key: str):
+    """
+    Verify an API key against the database.
+
+    Args:
+        db: SQLAlchemy database session
+        api_key: The API key to verify
+
+    Returns:
+        APIKey object if valid, None if invalid
+    """
+    if not api_key or len(api_key) < 8:
+        return None
+
+    # Get the prefix (first 8 characters)
+    prefix = api_key[:8]
+
+    # Hash the full API key
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+
+    # Query the database for a matching API key
+    api_key_obj = (
+        db.query(APIKey)
+        .filter(
+            APIKey.key_prefix == prefix,
+            APIKey.key_hash == key_hash,
+            APIKey.is_active,
+        )
+        .first()
+    )
+
+    return api_key_obj
 
 
 def check_rate_limit(ip_address):
