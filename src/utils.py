@@ -44,14 +44,28 @@ except Exception as e:
 
 
 async def unlock_door(duration=RELAY_ACTIVATION_TIME):
-    logging.info("Activating relay.")
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(RELAY_PIN, GPIO.OUT)
-    GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
-    await asyncio.sleep(duration)
-    GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
-    GPIO.cleanup()
-    logging.info("Relay deactivated.")
+    try:
+        logging.info("Activating relay.")
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(RELAY_PIN, GPIO.OUT)
+        GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
+
+        # Create a task for the timer
+        await asyncio.sleep(duration)
+
+        # Deactivate after duration
+        GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
+        GPIO.cleanup()
+        logging.info("Relay deactivated.")
+    except Exception as e:
+        logging.error(f"Error in unlock_door: {e}")
+        # Ensure we cleanup GPIO even if there's an error
+        try:
+            GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
+            GPIO.cleanup()
+        except:
+            pass
+        raise
 
 
 def generate_salt(length=16):

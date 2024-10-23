@@ -6,7 +6,7 @@ from ..utils import user_return_format
 import src.db as db
 import src.utils as utils
 import logging
-from ...reader.input_handler import read_input
+from ...reader.reader import read_single_input
 
 router = APIRouter(prefix="/rfids", tags=["rfids"])
 
@@ -62,7 +62,7 @@ def create_rfid(
 async def read_rfid(timeout: int, user: db.User = Depends(authenticate_user)):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
-        rfid_uuid = await read_input(timeout=min(timeout, 30))
+        rfid_uuid = await read_single_input(timeout=min(timeout, 30))
         if not rfid_uuid:
             logging.warning("RFID not found within the timeout period")
             raise APIException(status_code=404, detail="RFID not found")

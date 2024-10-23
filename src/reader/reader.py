@@ -5,28 +5,15 @@ from collections import deque
 from src.db import get_all_pins, get_all_rfids
 from src.reader.input_handler import read_input
 from src.utils import logging
+from src.door_manager import door_manager
 import asyncio
 
 load_dotenv()
 
-input_lock = asyncio.Lock()
-
-reader_task = None
+input_queue = asyncio.Queue()
+reader_status = "stopped"
 task_running = False
-
-RFID_LENGTH = int(os.getenv("RFID_LENGTH", 10))
-INPUT_MODE = os.getenv("INPUT_MODE", "standard")
-INPUT_TIMEOUT = int(os.getenv("INPUT_TIMEOUT", 10))
-
-
-def open_door():
-    """Activate the relay to open the door."""
-    logging.info("PIN or RFID correct! Activating relay.")
-    asyncio.create_task(utils.unlock_door())
-    logging.info("Relay deactivated.")
-
-
-input_buffer = deque(maxlen=10)
+reader_task = None
 
 
 def check_input(input_value):
@@ -50,56 +37,74 @@ def check_input(input_value):
     return False
 
 
-async def run_reader():
-    global reader_status
-    reader_status = "running"
-    try:
-        while task_running:
-            print("Waiting for a complete PIN or RFID input...", flush=True)
-            try:
-                async with input_lock:
-                    input_value = await read_input(timeout=INPUT_TIMEOUT)
-                if input_value:
-                    # Process the input_value
-                    if (
-                        check_input(input_value) is True
-                    ):  # important to compare with True, not just if ... because if e.g. we change check_input to an async function and not await it properly, it will return a coroutine and not True. This bug would mean that the door would open for any input.
-                        asyncio.create_task(utils.unlock_door())
-                        logging.info(f"Door opened for input: {input_value}")
-                    else:
-                        logging.debug(f"Invalid input: {input_value}")
+async def input_reader():
+    """Continuously reads input and puts it into the queue"""
+    while task_running:
+        try:
+            input_value = await read_input(timeout=None)  # No timeout here
+            if input_value:
+                await input_queue.put(input_value)
+        except Exception as e:
+            logging.error(f"Error in input reader: {e}")
+            await asyncio.sleep(1)  # Prevent tight loop on error
+
+
+async def input_processor():
+    """Processes input from the queue"""
+    while task_running:
+        # print("Waiting for a complete PIN or RFID input...", flush=True)
+        try:
+            # Use a timeout here to allow checking task_running periodically
+            input_value = await asyncio.wait_for(input_queue.get(), timeout=1)
+            if input_value:
+                if check_input(input_value) is True:
+                    await door_manager.unlock(
+                        utils.unlock_door, utils.RELAY_ACTIVATION_TIME
+                    )
                 else:
-                    logging.info("Input timeout or no input received.")
-            except asyncio.CancelledError:
-                logging.info("Reader task cancelled")
-                break
-            except Exception as e:
-                logging.error(f"Exception in run_reader: {e}")
-                break
-    finally:
-        reader_status = "stopped"
+                    logging.debug(f"Invalid input: {input_value}")
+        except asyncio.TimeoutError:
+            continue  # Just continue if no input received
+        except Exception as e:
+            logging.error(f"Error in input processor: {e}")
 
 
 def start_reader():
-    global reader_task, task_running
+    global reader_task, task_running, reader_status
     if not task_running:
         task_running = True
+        reader_status = "running"
         loop = asyncio.get_event_loop()
-        reader_task = loop.create_task(run_reader())
+        # Create separate tasks for reader and processor
+        reader_task_1 = loop.create_task(input_reader())
+        reader_task_2 = loop.create_task(input_processor())
+        # Store both tasks
+        reader_task = asyncio.gather(reader_task_1, reader_task_2)
         logging.info("Reader started")
     else:
         logging.warning("Reader is already running")
 
 
 def stop_reader():
-    global task_running
+    global task_running, reader_status, reader_task
     if task_running:
         task_running = False
+        reader_status = "stopped"
+        if reader_task:
+            reader_task.cancel()
         logging.info("Reader stop requested")
     else:
         logging.warning("Reader is not running")
 
 
 def get_reader_status():
-    global task_running
-    return "running" if task_running else "stopped"
+    """Returns the current status of the reader ('running' or 'stopped')"""
+    return reader_status
+
+
+async def read_single_input(timeout):
+    """For one-off input reading (like RFID registration)"""
+    try:
+        return await asyncio.wait_for(read_input(timeout=timeout), timeout=timeout)
+    except asyncio.TimeoutError:
+        return None

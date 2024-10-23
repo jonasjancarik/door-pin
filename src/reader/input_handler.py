@@ -48,91 +48,96 @@ def decode_keypad_input(input_sequence):
 
 
 async def read_input(timeout=None):
-    # async with input_lock:
     if INPUT_MODE == "stdin":
         logging.info("Reading input from stdin")
         return await read_stdin(timeout)
     else:
         logging.info("Reading input from evdev")
-        return await read_evdev(timeout)
+        try:
+            # Create a queue for input events
+            input_queue = asyncio.Queue()
+            # Start the input reading task
+            read_task = asyncio.create_task(read_evdev(timeout, input_queue))
+
+            # Wait for either timeout or input
+            try:
+                result = await asyncio.wait_for(input_queue.get(), timeout=timeout)
+                read_task.cancel()  # Cancel the reading task once we have input
+                return result
+            except asyncio.TimeoutError:
+                read_task.cancel()  # Cancel the reading task on timeout
+                return None
+        except Exception as e:
+            logging.error(f"Error in read_input: {e}")
+            return None
 
 
-async def read_evdev(timeout=None):
-    keyboards = find_keyboards()
-    if not keyboards:
-        logging.error("No keyboards found.")
-        return None
+async def read_evdev(timeout, input_queue):
+    try:
+        keyboards = find_keyboards()
+        if not keyboards:
+            logging.error("No keyboards found.")
+            return None
 
-    input_buffer = deque(maxlen=MAX_INPUT_LENGTH)
-    t9em_input_buffer = deque(maxlen=10)
-    start_time = asyncio.get_event_loop().time()
+        input_buffer = deque(maxlen=MAX_INPUT_LENGTH)
+        t9em_input_buffer = deque(maxlen=10)
 
-    # Create a list to store the tasks for each keyboard
-    tasks = []
-
-    # Create a coroutine for each keyboard
-    for keyboard in keyboards:
-        tasks.append(
-            asyncio.create_task(
-                read_events(
-                    keyboard, input_buffer, t9em_input_buffer, start_time, timeout
+        # Create tasks for each keyboard
+        keyboard_tasks = []
+        for keyboard in keyboards:
+            task = asyncio.create_task(
+                read_keyboard_events(
+                    keyboard, input_buffer, t9em_input_buffer, input_queue
                 )
             )
-        )
+            keyboard_tasks.append(task)
 
-    # Wait for any of the tasks to complete
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        # Wait for any keyboard task to complete or timeout
+        try:
+            await asyncio.gather(*keyboard_tasks)
+        except asyncio.CancelledError:
+            # Cancel all keyboard tasks when one completes
+            for task in keyboard_tasks:
+                task.cancel()
+    except Exception as e:
+        logging.error(f"Error in read_evdev: {e}")
+        raise
 
-    # Cancel all pending tasks
-    for task in pending:
-        task.cancel()
 
-    # Return the input buffer
-    return "".join(input_buffer) if input_buffer else None
-
-
-async def read_events(device, input_buffer, t9em_input_buffer, start_time, timeout):
+async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_queue):
     try:
         async for event in device.async_read_loop():
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
                 if data.keystate == 1:  # Key down events only
-                    current_time = asyncio.get_event_loop().time()
                     key = process_key(data.keycode)
                     if key:
-                        if timeout and (current_time - start_time) > timeout:
-                            logging.warning(
-                                "Input timeout reached. Resetting input buffer."
-                            )
-                            input_buffer.clear()
-                            t9em_input_buffer.clear()
-                        start_time = current_time  # Reset start time on keypress
-                        logging.debug(f"Key pressed: {key}")
                         if INPUT_MODE == "t9em":
-                            # t9em handling logic
+                            # Handle t9em input mode
                             if key == "ENTER":
                                 input_sequence = "".join(t9em_input_buffer)
-                                # try decoding the input
                                 decoded_key = decode_keypad_input(input_sequence)
                                 if decoded_key:
                                     input_buffer.append(decoded_key)
                                 else:
-                                    # we couldn't decode the input, meaning it's probably a RFID
                                     input_buffer.append(input_sequence)
-                                t9em_input_buffer.clear()
-                                if not decoded_key:
-                                    return  # Return after processing ENTER key
-                                elif len(input_buffer) == PIN_LENGTH:
-                                    return "".join(input_buffer)
+                                result = "".join(input_buffer)
+                                await input_queue.put(result)
+                                return
                             else:
                                 t9em_input_buffer.append(key)
                         else:
-                            if key and (key.isdigit() or key.isalpha()):
+                            if key.isdigit() or key.isalpha():
                                 input_buffer.append(key)
-                            if key == "ENTER":
-                                return  # Return when ENTER key is pressed
+                            elif key == "ENTER":
+                                result = "".join(input_buffer)
+                                await input_queue.put(result)
+                                return
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
-        logging.error(f"Error reading events from device {device.path}: {e}")
+        logging.error(f"Error reading keyboard events: {e}")
+        raise
 
 
 def process_key(keycode):
@@ -152,7 +157,8 @@ async def read_stdin(timeout=None):
     loop = asyncio.get_event_loop()
     try:
         input_value = await asyncio.wait_for(
-            loop.run_in_executor(None, input, "Enter PIN or RFID: "), timeout=timeout
+            loop.run_in_executor(None, input, "You can enter PIN or RFID now...\n"),
+            timeout=timeout,
         )
         return input_value.strip()
     except asyncio.TimeoutError:
