@@ -79,6 +79,7 @@ async def read_evdev(timeout, input_queue):
             logging.error("No keyboards found.")
             return None
 
+        # Create shared buffers
         input_buffer = deque(maxlen=MAX_INPUT_LENGTH)
         t9em_input_buffer = deque(maxlen=10)
 
@@ -94,11 +95,27 @@ async def read_evdev(timeout, input_queue):
 
         # Wait for any keyboard task to complete or timeout
         try:
-            await asyncio.gather(*keyboard_tasks)
+            if timeout is not None:
+                await asyncio.wait_for(asyncio.gather(*keyboard_tasks), timeout=timeout)
+            else:
+                await asyncio.gather(*keyboard_tasks)
+        except asyncio.TimeoutError:
+            logging.debug("Keyboard input timeout reached")
+            # Clear the buffers on timeout
+            input_buffer.clear()
+            t9em_input_buffer.clear()
         except asyncio.CancelledError:
-            # Cancel all keyboard tasks when one completes
+            logging.debug("Keyboard tasks cancelled")
+            # Also clear buffers on cancellation
+            input_buffer.clear()
+            t9em_input_buffer.clear()
+        finally:
+            # Cancel all keyboard tasks
             for task in keyboard_tasks:
-                task.cancel()
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to complete their cancellation
+            await asyncio.gather(*keyboard_tasks, return_exceptions=True)
     except Exception as e:
         logging.error(f"Error in read_evdev: {e}")
         raise
