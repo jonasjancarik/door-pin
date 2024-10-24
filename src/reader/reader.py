@@ -103,6 +103,23 @@ def get_reader_status():
 async def read_single_input(timeout):
     """For one-off input reading (like RFID registration)"""
     try:
-        return await asyncio.wait_for(read_input(timeout=timeout), timeout=timeout)
-    except asyncio.TimeoutError:
+        # Start a temporary reading task
+        read_task = asyncio.create_task(read_input(timeout=timeout))
+
+        try:
+            # Wait for input with timeout
+            input_value = await asyncio.wait_for(read_task, timeout=timeout)
+            return input_value
+        except asyncio.TimeoutError:
+            return None
+        finally:
+            # Always clean up the task
+            if not read_task.done():
+                read_task.cancel()
+                try:
+                    await read_task
+                except asyncio.CancelledError:
+                    pass
+    except Exception as e:
+        logging.error(f"Error in read_single_input: {e}")
         return None
