@@ -59,14 +59,14 @@ async def read_input(timeout=None):
             # Start the input reading task
             read_task = asyncio.create_task(read_evdev(timeout, input_queue))
 
-            # Wait for either timeout or input
             try:
-                result = await asyncio.wait_for(input_queue.get(), timeout=timeout)
+                # Just wait for the input without timeout
+                result = await input_queue.get()
                 read_task.cancel()  # Cancel the reading task once we have input
                 return result
-            except asyncio.TimeoutError:
+            except Exception as e:
                 try:
-                    read_task.cancel()  # Cancel the reading task on timeout
+                    read_task.cancel()
                 except Exception as e:
                     logger.error(f"Error cancelling read_task: {e}")
                 return None
@@ -89,27 +89,21 @@ async def read_evdev(timeout, input_queue):
         # Create tasks for each keyboard
         keyboard_tasks = []
         for keyboard in keyboards:
+            # Pass timeout in task name
             task = asyncio.create_task(
                 read_keyboard_events(
-                    keyboard, input_buffer, t9em_input_buffer, input_queue
-                )
+                    keyboard, input_buffer, t9em_input_buffer, input_queue, timeout
+                ),
+                name=str(timeout) if timeout is not None else "Task-1",
             )
             keyboard_tasks.append(task)
 
-        # Wait for any keyboard task to complete or timeout
+        # Wait for any keyboard task to complete
         try:
-            if timeout is not None:
-                await asyncio.wait_for(asyncio.gather(*keyboard_tasks), timeout=timeout)
-            else:
-                await asyncio.gather(*keyboard_tasks)
-        except asyncio.TimeoutError:
-            logger.debug("Keyboard input timeout reached")
-            # Clear the buffers on timeout
-            input_buffer.clear()
-            t9em_input_buffer.clear()
+            await asyncio.gather(*keyboard_tasks)
         except asyncio.CancelledError:
             logger.debug("Keyboard tasks cancelled")
-            # Also clear buffers on cancellation
+            # Clear buffers on cancellation
             input_buffer.clear()
             t9em_input_buffer.clear()
         finally:
@@ -130,14 +124,36 @@ async def read_evdev(timeout, input_queue):
         raise
 
 
-async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_queue):
+async def read_keyboard_events(
+    device, input_buffer, t9em_input_buffer, input_queue, timeout=None
+):
     try:
+        first_key_received = False
+        start_time = None
+
         async for event in device.async_read_loop():
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
                 if data.keystate == 1:  # Key down events only
+                    # Start timing from first keypress
+                    if not first_key_received:
+                        first_key_received = True
+                        start_time = asyncio.get_event_loop().time()
+
                     key = process_key(data.keycode)
                     if key:
+                        # Check timeout if we have one
+                        if timeout is not None and start_time is not None:
+                            if asyncio.get_event_loop().time() - start_time > timeout:
+                                logger.debug(
+                                    "Timeout reached after first keypress, clearing buffers"
+                                )
+                                input_buffer.clear()
+                                t9em_input_buffer.clear()
+                                first_key_received = False
+                                start_time = None
+                                continue
+
                         if INPUT_SOURCE == "t9em":
                             # Handle t9em input mode
                             if key == "ENTER":
@@ -149,7 +165,10 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                                     input_buffer.append(input_sequence)
                                 result = "".join(input_buffer)
                                 await input_queue.put(result)
-                                return
+                                input_buffer.clear()
+                                t9em_input_buffer.clear()
+                                first_key_received = False
+                                start_time = None
                             else:
                                 t9em_input_buffer.append(key)
                         else:
@@ -158,7 +177,10 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                             elif key == "ENTER":
                                 result = "".join(input_buffer)
                                 await input_queue.put(result)
-                                return
+                                input_buffer.clear()
+                                first_key_received = False
+                                start_time = None
+
     except asyncio.CancelledError:
         pass  # This is expected when the task is cancelled
     except Exception as e:

@@ -44,6 +44,11 @@ async def input_reader():
             input_value = await read_input(timeout=INPUT_TIMEOUT)
             if input_value:
                 await input_queue.put(input_value)
+            else:
+                # If we get None (timeout), just continue the loop to start reading again
+                # todo: probably not needed
+                logger.debug("Input timeout reached, starting new read cycle")
+                continue
         except asyncio.InvalidStateError:
             logger.warning("Invalid state in input reader, resetting...")
             await asyncio.sleep(1)
@@ -70,6 +75,7 @@ async def input_processor():
                 else:
                     logger.debug(f"Invalid input: {input_value}")
         except asyncio.TimeoutError:
+            logger.debug("Timeout reached in input processor")
             continue  # Just continue if no input received
         except Exception as e:
             logger.error(f"Error in input processor: {e}")
