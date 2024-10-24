@@ -3,7 +3,6 @@ from ..models import (
     UserCreate,
     UserResponse,
     UserUpdate,
-    ApartmentResponse,
     User,
 )
 from ..exceptions import APIException
