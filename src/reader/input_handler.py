@@ -47,17 +47,17 @@ def decode_keypad_input(input_sequence):
     return KEY_CODES.get(input_sequence, "")
 
 
-async def read_input(timeout=None):
+async def read_input():
     if INPUT_SOURCE == "stdin":
         logger.info("Reading input from stdin")
-        return await read_stdin(timeout)
+        return await read_stdin()
     else:
         logger.info("Reading input from evdev")
         try:
             # Create a queue for input events
             input_queue = asyncio.Queue()
             # Start the input reading task
-            read_task = asyncio.create_task(read_evdev(timeout, input_queue))
+            read_task = asyncio.create_task(read_evdev(input_queue))
 
             try:
                 # Just wait for the input without timeout
@@ -75,7 +75,21 @@ async def read_input(timeout=None):
             return None
 
 
-async def read_evdev(timeout, input_queue):
+async def read_stdin():
+    timeout = int(os.getenv("INPUT_TIMEOUT", 10))
+    loop = asyncio.get_event_loop()
+    try:
+        input_value = await asyncio.wait_for(
+            loop.run_in_executor(None, input, "You can enter PIN or RFID now...\n"),
+            timeout=timeout,
+        )
+        return input_value.strip()
+    except asyncio.TimeoutError:
+        logger.warning("Input timeout reached.")
+        return None
+
+
+async def read_evdev(input_queue):
     try:
         keyboards = find_keyboards()
         if not keyboards:
@@ -89,12 +103,10 @@ async def read_evdev(timeout, input_queue):
         # Create tasks for each keyboard
         keyboard_tasks = []
         for keyboard in keyboards:
-            # Pass timeout in task name
             task = asyncio.create_task(
                 read_keyboard_events(
-                    keyboard, input_buffer, t9em_input_buffer, input_queue, timeout
-                ),
-                name=str(timeout) if timeout is not None else "Task-1",
+                    keyboard, input_buffer, t9em_input_buffer, input_queue
+                )
             )
             keyboard_tasks.append(task)
 
@@ -124,9 +136,8 @@ async def read_evdev(timeout, input_queue):
         raise
 
 
-async def read_keyboard_events(
-    device, input_buffer, t9em_input_buffer, input_queue, timeout=None
-):
+async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_queue):
+    timeout = int(os.getenv("INPUT_TIMEOUT", 10))
     try:
         first_key_received = False
         start_time = None
@@ -142,8 +153,7 @@ async def read_keyboard_events(
 
                     key = process_key(data.keycode)
                     if key:
-                        # Check timeout if we have one
-                        if timeout is not None and start_time is not None:
+                        if start_time is not None:
                             if asyncio.get_event_loop().time() - start_time > timeout:
                                 logger.debug(
                                     "Timeout reached after first keypress, clearing buffers"
@@ -152,7 +162,6 @@ async def read_keyboard_events(
                                 t9em_input_buffer.clear()
                                 first_key_received = False
                                 start_time = None
-                                continue
 
                         if INPUT_SOURCE == "t9em":
                             # Handle t9em input mode
@@ -199,16 +208,3 @@ def process_key(keycode):
     if "KEY_" in key_code:
         return key_code.split("_")[1].replace("KP", "")
     return None
-
-
-async def read_stdin(timeout=None):
-    loop = asyncio.get_event_loop()
-    try:
-        input_value = await asyncio.wait_for(
-            loop.run_in_executor(None, input, "You can enter PIN or RFID now...\n"),
-            timeout=timeout,
-        )
-        return input_value.strip()
-    except asyncio.TimeoutError:
-        logger.warning("Input timeout reached.")
-        return None

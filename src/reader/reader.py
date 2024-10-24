@@ -33,7 +33,9 @@ def check_input(input_value):
             logger.info("Valid RFID used")
             return True
 
-    logger.warning("Invalid PIN or RFID attempted")
+    logger.warning(
+        "Invalid PIN or RFID attempted (this is normal after /rfids/read)"
+    )  # todo: can we detect that this is the result of /rfids/read being called?
     return False
 
 
@@ -41,7 +43,7 @@ async def input_reader():
     """Continuously reads input and puts it into the queue"""
     while task_running:
         try:
-            input_value = await read_input(timeout=INPUT_TIMEOUT)
+            input_value = await read_input()
             if input_value:
                 await input_queue.put(input_value)
             else:
@@ -67,6 +69,7 @@ async def input_processor():
         try:
             # Use a timeout here to allow checking task_running periodically
             input_value = await asyncio.wait_for(input_queue.get(), timeout=1)
+            logger.debug(f"Input value: {input_value}")
             if input_value:
                 if check_input(input_value) is True:
                     await door_manager.unlock(
@@ -118,7 +121,7 @@ async def read_single_input(timeout):
     """For one-off input reading (like RFID registration)"""
     try:
         # Start a temporary reading task
-        read_task = asyncio.create_task(read_input(timeout=timeout))
+        read_task = asyncio.create_task(read_input())
 
         try:
             # Wait for input with timeout
