@@ -65,7 +65,7 @@ def apartment_return_format(apartment):
     }
 
 
-def user_return_format(user):
+def build_user_response(user):
     return {
         "id": user.id,
         "name": user.name,

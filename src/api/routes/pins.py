@@ -1,6 +1,7 @@
-from fastapi import APIRouter, status, Response
+from fastapi import APIRouter, status, Response, Depends
 from ..models import PINCreate, PINResponse, PINUpdate, User
 from ..exceptions import APIException
+from ..dependencies import get_current_user
 
 import src.db as db
 import src.utils as utils
@@ -9,7 +10,7 @@ router = APIRouter(prefix="/pins", tags=["pins"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PINResponse)
-def create_pin(pin_request: PINCreate, current_user: User):
+def create_pin(pin_request: PINCreate, current_user: User = Depends(get_current_user)):
     salt = utils.generate_salt()
     hashed_pin = utils.hash_secret(payload=pin_request.pin, salt=salt)
 
@@ -50,7 +51,9 @@ def create_pin(pin_request: PINCreate, current_user: User):
 
 
 @router.patch("/{pin_id}", status_code=status.HTTP_200_OK)
-def update_pin(pin_id: int, pin_request: PINUpdate, current_user: User):
+def update_pin(
+    pin_id: int, pin_request: PINUpdate, current_user: User = Depends(get_current_user)
+):
     pin = db.get_pin(pin_id)
     if not pin:
         raise APIException(status_code=404, detail="PIN not found")
@@ -73,7 +76,7 @@ def update_pin(pin_id: int, pin_request: PINUpdate, current_user: User):
 
 
 @router.delete("/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_pin(pin_id: int, current_user: User):
+def delete_pin(pin_id: int, current_user: User = Depends(get_current_user)):
     pin = db.get_pin(pin_id)
     if not pin:
         raise APIException(status_code=404, detail="PIN not found")
@@ -103,7 +106,7 @@ def delete_pin(pin_id: int, current_user: User):
 
 
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[PINResponse])
-def list_pins(current_user: User):
+def list_pins(current_user: User = Depends(get_current_user)):
     if current_user.role == "admin":
         pins = db.get_all_pins()
     elif current_user.role == "apartment_admin":

@@ -9,7 +9,7 @@ from ..models import (
 )
 from ..exceptions import APIException
 from ..dependencies import get_current_token, get_current_user
-from ..utils import check_rate_limit, user_return_format
+from ..utils import check_rate_limit, build_user_response
 import src.db as db
 import src.utils as utils
 import os
@@ -109,7 +109,7 @@ def verify_authentication(
     new_expiration = int(time_module.time()) + 31536000  # 1 year from now
     db.extend_token_expiration(current_token, new_expiration)
     return VerifyAuthResponse(
-        status="authenticated", user=user_return_format(current_user)
+        status="authenticated", user=build_user_response(current_user)
     )
 
 
@@ -175,5 +175,5 @@ def exchange_code(login_attempt: LoginCodeAttempt, request: Request):
     return {
         "access_token": bearer_token,
         "token_type": "bearer",
-        "user": user_return_format(user),
+        "user": build_user_response(user),
     }

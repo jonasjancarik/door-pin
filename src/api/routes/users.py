@@ -1,11 +1,14 @@
-from fastapi import APIRouter, status, Response, Path
+from fastapi import APIRouter, status, Response, Path, Depends
 from ..models import (
     UserCreate,
     UserResponse,
     UserUpdate,
+    ApartmentResponse,
     User,
-)  # Import the Pydantic User model
+)
 from ..exceptions import APIException
+from ..dependencies import get_current_user
+from ..utils import build_user_response
 import src.db as db
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -13,7 +16,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 def create_user(
-    new_user: UserCreate, current_user: User
+    new_user: UserCreate, current_user: User = Depends(get_current_user)
 ):  # Use the Pydantic User model
     if current_user.role == "guest":
         raise APIException(
@@ -65,17 +68,11 @@ def create_user(
         }
     )
 
-    return UserResponse(
-        id=created_user.id,
-        name=created_user.name,
-        email=created_user.email,
-        role=created_user.role,
-        apartment_number=apartment.number,
-    )
+    return build_user_response(created_user)
 
 
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[UserResponse])
-def list_users(current_user: User):  # Use the Pydantic User model
+def list_users(current_user: User = Depends(get_current_user)):
     if current_user.role == "admin":
         users = db.get_all_users()
     elif current_user.role == "apartment_admin":
@@ -83,20 +80,11 @@ def list_users(current_user: User):  # Use the Pydantic User model
     else:
         raise APIException(status_code=403, detail="Guests cannot list users")
 
-    return [
-        UserResponse(
-            id=user.id,
-            name=user.name,
-            email=user.email,
-            role=user.role,
-            apartment_number=user.apartment.number,
-        )
-        for user in users
-    ]
+    return [build_user_response(user) for user in users]
 
 
 @router.get("/{user_id}", status_code=status.HTTP_200_OK, response_model=UserResponse)
-def get_user(user_id: int, current_user: User):
+def get_user(user_id: int, current_user: User = Depends(get_current_user)):
     user = db.get_user(user_id)
     if not user:
         raise APIException(status_code=404, detail="User not found")
@@ -122,7 +110,11 @@ def get_user(user_id: int, current_user: User):
 
 
 @router.put("/{user_id}", status_code=status.HTTP_200_OK, response_model=UserResponse)
-def update_user(user_id: int, updated_user: UserUpdate, current_user: User):
+def update_user(
+    user_id: int,
+    updated_user: UserUpdate,
+    current_user: User = Depends(get_current_user),
+):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
     try:
@@ -144,7 +136,7 @@ def update_user(user_id: int, updated_user: UserUpdate, current_user: User):
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, current_user: User):
+def delete_user(user_id: int, current_user: User = Depends(get_current_user)):
     if current_user.role not in ["admin", "apartment_admin"]:
         raise APIException(status_code=403, detail="Insufficient permissions")
 
@@ -169,7 +161,7 @@ def delete_user(user_id: int, current_user: User):
 
 @router.get("/{user_id}/rfids", status_code=status.HTTP_200_OK)
 def list_user_rfids(
-    current_user: User,
+    current_user: User = Depends(get_current_user),
     user_id: int = Path(..., description="The ID of the user whose RFIDs to list"),
 ):
     if current_user.role == "admin":
@@ -197,7 +189,7 @@ def list_user_rfids(
 
 @router.get("/{user_id}/pins", status_code=status.HTTP_200_OK)
 def list_user_pins(
-    current_user: User,
+    current_user: User = Depends(get_current_user),
     user_id: int = Path(..., description="User ID to fetch pins for"),
 ):
     if current_user.role == "admin":

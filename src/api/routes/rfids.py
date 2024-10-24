@@ -1,7 +1,8 @@
-from fastapi import APIRouter, status, Response
+from fastapi import APIRouter, status, Response, Depends
 from ..models import RFIDCreate, RFIDResponse, User
 from ..exceptions import APIException
-from ..utils import user_return_format
+from ..utils import build_user_response
+from ..dependencies import get_current_user
 import src.db as db
 import src.utils as utils
 import logging
@@ -11,7 +12,9 @@ router = APIRouter(prefix="/rfids", tags=["rfids"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_rfid(rfid_request: RFIDCreate, current_user: User):
+def create_rfid(
+    rfid_request: RFIDCreate, current_user: User = Depends(get_current_user)
+):
     salt = utils.generate_salt()
     hashed_uuid = utils.hash_secret(payload=rfid_request.uuid, salt=salt)
     last_four_digits = rfid_request.uuid[-4:]
@@ -55,12 +58,12 @@ def create_rfid(rfid_request: RFIDCreate, current_user: User):
             user_email=target_user.email,
             last_four_digits=last_four_digits,
         ),
-        "user": user_return_format(target_user),
+        "user": build_user_response(target_user),
     }
 
 
 @router.get("/read", status_code=status.HTTP_200_OK)
-async def read_rfid(timeout: int, user: User):
+async def read_rfid(timeout: int, user: User = Depends(get_current_user)):
     logging.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
         rfid_uuid = await read_single_input(timeout=min(timeout, 30))
@@ -75,7 +78,7 @@ async def read_rfid(timeout: int, user: User):
 
 
 @router.delete("/{rfid_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_rfid(rfid_id: int, current_user: User):
+def delete_rfid(rfid_id: int, current_user: User = Depends(get_current_user)):
     rfid = db.get_rfid(rfid_id)
     if not rfid:
         raise APIException(status_code=404, detail="RFID not found")
@@ -105,7 +108,7 @@ def delete_rfid(rfid_id: int, current_user: User):
 
 
 @router.get("", status_code=status.HTTP_200_OK)
-def list_rfids(current_user: User):
+def list_rfids(current_user: User = Depends(get_current_user)):
     if current_user.role == "admin":
         rfids = db.get_all_rfids()
     elif current_user.role == "apartment_admin":

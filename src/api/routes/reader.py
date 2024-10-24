@@ -1,13 +1,14 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Depends
 from ..exceptions import APIException
 from ...reader.reader import start_reader, stop_reader, get_reader_status
 from ..models import User
+from ..dependencies import get_current_user
 
 router = APIRouter(prefix="/reader", tags=["reader"])
 
 
 @router.post("/start", status_code=status.HTTP_200_OK)
-async def start_reader_endpoint(current_user: User):
+async def start_reader_endpoint(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
     if get_reader_status() == "running":
@@ -17,7 +18,7 @@ async def start_reader_endpoint(current_user: User):
 
 
 @router.post("/stop", status_code=status.HTTP_200_OK)
-async def stop_reader_endpoint(current_user: User):
+async def stop_reader_endpoint(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
     if get_reader_status() == "stopped":
@@ -28,7 +29,7 @@ async def stop_reader_endpoint(current_user: User):
 
 @router.get("/status", status_code=status.HTTP_200_OK)
 async def get_reader_status_endpoint(
-    current_user: User,
+    current_user: User = Depends(get_current_user),
 ):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")

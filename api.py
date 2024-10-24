@@ -42,10 +42,8 @@ app.add_middleware(
 # Create a new router for authenticated routes
 authenticated_router = APIRouter(dependencies=[Depends(get_current_user)])
 
-# Include the users router in the authenticated router
-authenticated_router.include_router(users_router)
-
 # Include all routers that require authentication
+authenticated_router.include_router(users_router)
 authenticated_router.include_router(rfids_router)
 authenticated_router.include_router(pins_router)
 authenticated_router.include_router(apartments_router)

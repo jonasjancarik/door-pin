@@ -1,12 +1,12 @@
 from fastapi import Depends, Request, Security
 from fastapi.security import OAuth2PasswordBearer
 from .exceptions import APIException
-import src.db as db
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 from src.db import get_db
 from src.api.utils import verify_api_key
 from src.db import User
+from src.utils import hash_secret
 
 api_key_header = APIKeyHeader(name="X-API-Key")
 
@@ -29,7 +29,8 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
         api_key = request.query_params.get("api_key")
 
     if api_key:
-        api_key_obj = verify_api_key(db, api_key)
+        with db as session:  # Use the context manager properly
+            api_key_obj = verify_api_key(session, api_key)
         if api_key_obj:
             return api_key_obj.user
 
@@ -39,7 +40,11 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
         raise APIException(status_code=401, detail="No valid authentication provided")
 
     token = authorization.replace("Bearer ", "")
-    user = db.query(User).filter(User.token == token).first()
+    with db as session:  # Use the context manager properly
+        token_hash = hash_secret(token)
+        user = (
+            session.query(User).filter(User.tokens.any(token_hash=token_hash)).first()
+        )
     if user:
         return user
     raise APIException(status_code=401, detail="Invalid authentication")
@@ -50,8 +55,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def authenticate_user(
     web_app_token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-) -> db.User:
-    user = db.query(User).filter(User.token == web_app_token).first()
+) -> User:
+    with db as session:  # Use the context manager properly
+        user = (
+            session.query(User)
+            .filter(User.tokens.any(token_hash=web_app_token))
+            .first()
+        )
     if user:
         return user
     raise APIException(status_code=401, detail="Unauthorized")

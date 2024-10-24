@@ -7,5 +7,5 @@ router = APIRouter(prefix="/doors", tags=["doors"])
 
 
 @router.post("/unlock", status_code=status.HTTP_200_OK)
-async def unlock_door(_: User):
+async def unlock_door():
     return await door_manager.unlock(utils.unlock_door, utils.RELAY_ACTIVATION_TIME)

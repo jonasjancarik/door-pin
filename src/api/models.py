@@ -95,7 +95,7 @@ class UserResponse(BaseModel):
     name: str
     email: EmailStr
     role: str
-    apartment_number: int
+    apartment: ApartmentResponse
 
 
 class UserUpdate(BaseModel):
