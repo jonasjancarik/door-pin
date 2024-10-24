@@ -68,9 +68,11 @@ async def read_rfid(timeout: int, user: User = Depends(get_current_user)):
     try:
         rfid_uuid = await read_single_input(timeout=min(timeout, 30))
         if not rfid_uuid:
-            logging.warning("RFID not found within the timeout period")
-            raise APIException(status_code=404, detail="RFID not found")
-        logging.info(f"Successfully read RFID: {rfid_uuid}")
+            logging.warning("No RFID scanned within timeout period")
+            return APIException(
+                status_code=404, detail="No RFID scanned within timeout period"
+            )
+        logging.info(f"Successfully read£ RFID: {rfid_uuid}")
         return {"uuid": rfid_uuid}
     except Exception as e:
         logging.error(f"Error reading RFID: {str(e)}")

@@ -144,14 +144,14 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                             else:
                                 t9em_input_buffer.append(key)
                         else:
-                            if key.isdigit() or key.isalpha():
+                            if key.isdigit() or (key.isalpha() and key != "ENTER"):
                                 input_buffer.append(key)
                             elif key == "ENTER":
                                 result = "".join(input_buffer)
                                 await input_queue.put(result)
                                 return
     except asyncio.CancelledError:
-        raise
+        pass  # This is expected when the task is cancelled
     except Exception as e:
         logging.error(f"Error reading keyboard events: {e}")
         raise

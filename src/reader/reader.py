@@ -39,12 +39,18 @@ async def input_reader():
     """Continuously reads input and puts it into the queue"""
     while task_running:
         try:
-            input_value = await read_input(timeout=None)  # No timeout here
+            input_value = await read_input(timeout=None)
             if input_value:
                 await input_queue.put(input_value)
+        except asyncio.InvalidStateError:
+            logging.warning("Invalid state in input reader, resetting...")
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            logging.info("Input reader cancelled")
+            break
         except Exception as e:
             logging.error(f"Error in input reader: {e}")
-            await asyncio.sleep(1)  # Prevent tight loop on error
+            await asyncio.sleep(1)
 
 
 async def input_processor():
