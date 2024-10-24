@@ -1,12 +1,14 @@
+import os
 import src.utils as utils
 from dotenv import load_dotenv
 from src.db import get_all_pins, get_all_rfids
 from src.reader.input_handler import read_input
-from src.utils import logging
+from src.logger import logger
 from src.door_manager import door_manager
 import asyncio
 
 load_dotenv()
+INPUT_TIMEOUT = int(os.getenv("INPUT_TIMEOUT", 10))
 
 input_queue = asyncio.Queue()
 reader_status = "stopped"
@@ -21,17 +23,17 @@ def check_input(input_value):
     all_pins = get_all_pins()
     for pin in all_pins:
         if utils.hash_secret(input_value, pin.salt) == pin.hashed_pin:
-            logging.info("Valid PIN used")
+            logger.info("Valid PIN used")
             return True
 
     # If not a PIN, check if it's an RFID
     all_rfids = get_all_rfids()
     for rfid in all_rfids:
         if utils.hash_secret(input_value, rfid.salt) == rfid.hashed_uuid:
-            logging.info("Valid RFID used")
+            logger.info("Valid RFID used")
             return True
 
-    logging.warning("Invalid PIN or RFID attempted")
+    logger.warning("Invalid PIN or RFID attempted")
     return False
 
 
@@ -39,17 +41,17 @@ async def input_reader():
     """Continuously reads input and puts it into the queue"""
     while task_running:
         try:
-            input_value = await read_input(timeout=None)
+            input_value = await read_input(timeout=INPUT_TIMEOUT)
             if input_value:
                 await input_queue.put(input_value)
         except asyncio.InvalidStateError:
-            logging.warning("Invalid state in input reader, resetting...")
+            logger.warning("Invalid state in input reader, resetting...")
             await asyncio.sleep(1)
         except asyncio.CancelledError:
-            logging.info("Input reader cancelled")
+            logger.info("Input reader cancelled")
             break
         except Exception as e:
-            logging.error(f"Error in input reader: {e}")
+            logger.error(f"Error in input reader: {e}")
             await asyncio.sleep(1)
 
 
@@ -66,11 +68,11 @@ async def input_processor():
                         utils.unlock_door, utils.RELAY_ACTIVATION_TIME
                     )
                 else:
-                    logging.debug(f"Invalid input: {input_value}")
+                    logger.debug(f"Invalid input: {input_value}")
         except asyncio.TimeoutError:
             continue  # Just continue if no input received
         except Exception as e:
-            logging.error(f"Error in input processor: {e}")
+            logger.error(f"Error in input processor: {e}")
 
 
 def start_reader():
@@ -84,9 +86,9 @@ def start_reader():
         reader_task_2 = loop.create_task(input_processor())
         # Store both tasks
         reader_task = asyncio.gather(reader_task_1, reader_task_2)
-        logging.info("Reader started")
+        logger.info("Reader started")
     else:
-        logging.warning("Reader is already running")
+        logger.warning("Reader is already running")
 
 
 def stop_reader():
@@ -96,9 +98,9 @@ def stop_reader():
         reader_status = "stopped"
         if reader_task:
             reader_task.cancel()
-        logging.info("Reader stop requested")
+        logger.info("Reader stop requested")
     else:
-        logging.warning("Reader is not running")
+        logger.warning("Reader is not running")
 
 
 def get_reader_status():
@@ -127,5 +129,5 @@ async def read_single_input(timeout):
                 except asyncio.CancelledError:
                     pass
     except Exception as e:
-        logging.error(f"Error in read_single_input: {e}")
+        logger.error(f"Error in read_single_input: {e}")
         return None

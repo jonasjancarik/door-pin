@@ -14,7 +14,7 @@ import src.db as db
 import src.utils as utils
 import os
 import boto3
-import logging
+from src.logger import logger
 from botocore.exceptions import ClientError, EndpointConnectionError
 import time as time_module
 from secrets import token_urlsafe
@@ -41,7 +41,7 @@ def send_magic_link(request: LoginRequest):
             user.id, hashed_token, int(time_module.time()) + 900
         )  # 15 minutes expiration
     else:
-        logging.error(f"Login code requested for a non-existing user {email}.")
+        logger.error(f"Login code requested for a non-existing user {email}.")
         return success_message  # for security reasons, we don't want to leak if the user exists
 
     url_to_use = os.getenv(
@@ -75,23 +75,23 @@ def send_magic_link(request: LoginRequest):
             },
             Source=sender,
         )
-        logging.info(f"Email sent: {response}")
-        logging.debug(f"Login code: {login_code}")
+        logger.info(f"Email sent: {response}")
+        logger.debug(f"Login code: {login_code}")
         return success_message
     except EndpointConnectionError as e:
-        logging.error(f"Failed to connect to AWS SES endpoint: {str(e)}")
+        logger.error(f"Failed to connect to AWS SES endpoint: {str(e)}")
         raise APIException(
             status_code=500,
             detail="Failed to connect to email service. Please check your AWS region configuration.",
         )
     except ClientError as e:
-        logging.error(f"Failed to send email: {str(e)}")
+        logger.error(f"Failed to send email: {str(e)}")
         raise APIException(
             status_code=500,
             detail="Failed to send email. Please check your AWS SES configuration.",
         )
     except Exception as e:
-        logging.error(f"Unexpected error while sending email: {str(e)}")
+        logger.error(f"Unexpected error while sending email: {str(e)}")
         raise APIException(
             status_code=500,
             detail="An unexpected error occurred while sending the email.",

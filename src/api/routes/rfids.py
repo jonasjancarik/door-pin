@@ -5,7 +5,7 @@ from ..utils import build_user_response
 from ..dependencies import get_current_user
 import src.db as db
 import src.utils as utils
-import logging
+from src.logger import logger
 from ...reader.reader import read_single_input
 
 router = APIRouter(prefix="/rfids", tags=["rfids"])
@@ -64,18 +64,18 @@ def create_rfid(
 
 @router.get("/read", status_code=status.HTTP_200_OK)
 async def read_rfid(timeout: int, user: User = Depends(get_current_user)):
-    logging.info(f"Attempting to read RFID with timeout: {timeout}")
+    logger.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
         rfid_uuid = await read_single_input(timeout=min(timeout, 30))
         if not rfid_uuid:
-            logging.warning("No RFID scanned within timeout period")
+            logger.warning("No RFID scanned within timeout period")
             return APIException(
                 status_code=404, detail="No RFID scanned within timeout period"
             )
-        logging.info(f"Successfully read£ RFID: {rfid_uuid}")
+        logger.info(f"Successfully read£ RFID: {rfid_uuid}")
         return {"uuid": rfid_uuid}
     except Exception as e:
-        logging.error(f"Error reading RFID: {str(e)}")
+        logger.error(f"Error reading RFID: {str(e)}")
         raise APIException(status_code=500, detail=f"Error reading RFID: {str(e)}")
 
 

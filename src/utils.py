@@ -2,17 +2,12 @@ import RPi.GPIO as GPIO
 from dotenv import load_dotenv
 import os
 import sys
+from src.logger import logger
 import hashlib
 import secrets
-import logging
 import asyncio
 
 load_dotenv()
-
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", logging.INFO),
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
 
 # config
 try:
@@ -45,7 +40,7 @@ except Exception as e:
 
 async def unlock_door(duration=RELAY_ACTIVATION_TIME):
     try:
-        logging.info("Activating relay.")
+        logger.info("Activating relay.")
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(RELAY_PIN, GPIO.OUT)
         GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
@@ -56,9 +51,9 @@ async def unlock_door(duration=RELAY_ACTIVATION_TIME):
         # Deactivate after duration
         GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
         GPIO.cleanup()
-        logging.info("Relay deactivated.")
+        logger.info("Relay deactivated.")
     except Exception as e:
-        logging.error(f"Error in unlock_door: {e}")
+        logger.error(f"Error in unlock_door: {e}")
         # Ensure we cleanup GPIO even if there's an error
         try:
             GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)

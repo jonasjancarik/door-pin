@@ -1,13 +1,13 @@
 import asyncio
 from collections import deque
-import logging
+from src.logger import logger
 import os
 from dotenv import load_dotenv
 
 try:
     from evdev import InputDevice, categorize, ecodes, list_devices  # type: ignore
 except ImportError:
-    logging.error(
+    logger.error(
         "Failed to import evdev. Make sure you have the evdev library installed in production."
     )
     pass
@@ -49,10 +49,10 @@ def decode_keypad_input(input_sequence):
 
 async def read_input(timeout=None):
     if INPUT_SOURCE == "stdin":
-        logging.info("Reading input from stdin")
+        logger.info("Reading input from stdin")
         return await read_stdin(timeout)
     else:
-        logging.info("Reading input from evdev")
+        logger.info("Reading input from evdev")
         try:
             # Create a queue for input events
             input_queue = asyncio.Queue()
@@ -65,10 +65,13 @@ async def read_input(timeout=None):
                 read_task.cancel()  # Cancel the reading task once we have input
                 return result
             except asyncio.TimeoutError:
-                read_task.cancel()  # Cancel the reading task on timeout
+                try:
+                    read_task.cancel()  # Cancel the reading task on timeout
+                except Exception as e:
+                    logger.error(f"Error cancelling read_task: {e}")
                 return None
         except Exception as e:
-            logging.error(f"Error in read_input: {e}")
+            logger.error(f"Error in read_input: {e}")
             return None
 
 
@@ -76,7 +79,7 @@ async def read_evdev(timeout, input_queue):
     try:
         keyboards = find_keyboards()
         if not keyboards:
-            logging.error("No keyboards found.")
+            logger.error("No keyboards found.")
             return None
 
         # Create shared buffers
@@ -100,12 +103,12 @@ async def read_evdev(timeout, input_queue):
             else:
                 await asyncio.gather(*keyboard_tasks)
         except asyncio.TimeoutError:
-            logging.debug("Keyboard input timeout reached")
+            logger.debug("Keyboard input timeout reached")
             # Clear the buffers on timeout
             input_buffer.clear()
             t9em_input_buffer.clear()
         except asyncio.CancelledError:
-            logging.debug("Keyboard tasks cancelled")
+            logger.debug("Keyboard tasks cancelled")
             # Also clear buffers on cancellation
             input_buffer.clear()
             t9em_input_buffer.clear()
@@ -115,9 +118,15 @@ async def read_evdev(timeout, input_queue):
                 if not task.done():
                     task.cancel()
             # Wait for all tasks to complete their cancellation
-            await asyncio.gather(*keyboard_tasks, return_exceptions=True)
+            try:
+                await asyncio.gather(*keyboard_tasks, return_exceptions=True)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Error in read_evdev: {e}")
+                raise
     except Exception as e:
-        logging.error(f"Error in read_evdev: {e}")
+        logger.error(f"Error in read_evdev: {e}")
         raise
 
 
@@ -153,7 +162,7 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
     except asyncio.CancelledError:
         pass  # This is expected when the task is cancelled
     except Exception as e:
-        logging.error(f"Error reading keyboard events: {e}")
+        logger.error(f"Error reading keyboard events: {e}")
         raise
 
 
@@ -163,7 +172,7 @@ def process_key(keycode):
     else:
         key_code = keycode
 
-    logging.debug(f"Processing keycode: {key_code}")
+    logger.debug(f"Processing keycode: {key_code}")
 
     if "KEY_" in key_code:
         return key_code.split("_")[1].replace("KP", "")
@@ -179,5 +188,5 @@ async def read_stdin(timeout=None):
         )
         return input_value.strip()
     except asyncio.TimeoutError:
-        logging.warning("Input timeout reached.")
+        logger.warning("Input timeout reached.")
         return None

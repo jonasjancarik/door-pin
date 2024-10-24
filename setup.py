@@ -1,7 +1,7 @@
 import db
 import csv
 import os
-import logging
+from src.logger import logger
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
@@ -9,17 +9,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+logger.basicConfig(
+    level=logger.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
 def init_database():
     try:
         db.init_db()
-        logging.info("Database initialized successfully")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        logging.error(f"Failed to initialize database: {e}")
+        logger.error(f"Failed to initialize database: {e}")
         exit(1)
 
 
@@ -33,71 +33,71 @@ def validate_csv_structure(file_path: str) -> bool:
 
             if not required_columns.issubset(header_set):
                 missing_columns = required_columns - header_set
-                logging.error(
+                logger.error(
                     f"CSV is missing required columns: {', '.join(missing_columns)}"
                 )
                 return False
 
-            logging.info(f"CSV headers: {headers}")
+            logger.info(f"CSV headers: {headers}")
 
             for row_num, row in enumerate(reader, start=2):
                 if len(row) != len(headers):
-                    logging.error(f"Row {row_num} has an incorrect number of columns")
+                    logger.error(f"Row {row_num} has an incorrect number of columns")
                     return False
 
                 row_dict = dict(zip(headers, row))
                 if not row_dict["apartment_number"].isdigit():
-                    logging.error(
+                    logger.error(
                         f"Row {row_num}: apartment_number must be a number, got {row_dict['apartment_number']} instead."
                     )
                     return False
 
                 if not row_dict["email"]:
-                    logging.error(f"Row {row_num}: email cannot be empty")
+                    logger.error(f"Row {row_num}: email cannot be empty")
                     return False
 
                 if row_dict["role"] not in ["admin", "apartment_admin", "guest"]:
-                    logging.error(
+                    logger.error(
                         f"Row {row_num}: invalid role. Must be admin, apartment_admin, or guest, got {row_dict['role']} instead."
                     )
                     return False
 
         return True
     except Exception as e:
-        logging.error(f"Error validating CSV file: {e}")
+        logger.error(f"Error validating CSV file: {e}")
         return False
 
 
 def load_csv_data(file_path: str) -> List[Dict[str, str]]:
     if not validate_csv_structure(file_path):
-        logging.error("CSV validation failed. Please check the file and try again.")
+        logger.error("CSV validation failed. Please check the file and try again.")
         return []
 
     try:
         with open(file_path, "r") as csvfile:
             reader = csv.DictReader(csvfile)
             data = list(reader)
-            logging.debug(f"CSV headers: {reader.fieldnames}")
-            logging.debug(f"First row: {data[0] if data else 'No data'}")
+            logger.debug(f"CSV headers: {reader.fieldnames}")
+            logger.debug(f"First row: {data[0] if data else 'No data'}")
             return data
     except FileNotFoundError:
-        logging.error(f"CSV file not found: {file_path}")
+        logger.error(f"CSV file not found: {file_path}")
         return []
     except csv.Error as e:
-        logging.error(f"Error reading CSV file: {e}")
+        logger.error(f"Error reading CSV file: {e}")
         return []
 
 
 def process_csv_row(row: Dict[str, str]) -> Optional[Dict[str, str]]:
     apartment_number = row.get("apartment_number")
     if not apartment_number:
-        logging.warning(f"Skipping row without apartment number: {row}")
+        logger.warning(f"Skipping row without apartment number: {row}")
         return None
 
     apartment = db.get_apartment_by_number(apartment_number)
     if not apartment:
         apartment = db.add_apartment(apartment_number)
-        logging.info(f"Created new apartment: {apartment_number}")
+        logger.info(f"Created new apartment: {apartment_number}")
 
     user_data = {
         "apartment_id": apartment.id,
@@ -106,8 +106,8 @@ def process_csv_row(row: Dict[str, str]) -> Optional[Dict[str, str]]:
         "role": row.get("role", "apartment_admin"),
     }
 
-    logging.debug(f"Processing row: {row}")
-    logging.debug(f"Created user data: {user_data}")
+    logger.debug(f"Processing row: {row}")
+    logger.debug(f"Created user data: {user_data}")
 
     return user_data
 
@@ -115,11 +115,11 @@ def process_csv_row(row: Dict[str, str]) -> Optional[Dict[str, str]]:
 def add_user(user_data: Dict[str, str]) -> None:
     created_user = db.add_user(user_data)
     if created_user:
-        logging.info(
+        logger.info(
             f"Added user {created_user.name} ({created_user.email}) to apartment {user_data['apartment_id']} with role {created_user.role}"
         )
     else:
-        logging.error(
+        logger.error(
             f"Failed to add user {user_data['name']} ({user_data['email']}) to apartment {user_data['apartment_id']}"
         )
 
@@ -141,7 +141,7 @@ def setup_interactively() -> None:
     for i in range(num_apartments):
         apartment_number = i + 1
         db.add_apartment(apartment_number)
-        logging.info(f"Added apartment {apartment_number}")
+        logger.info(f"Added apartment {apartment_number}")
 
     add_users = (
         input("Do you want to add users to the apartments? (y/n) ").lower() == "y"
@@ -186,11 +186,11 @@ def main():
         overwrite = input("Do you want to delete it? (y/n) ").lower()
         if overwrite == "y":
             os.remove("data.db")
-            logging.info("data.db deleted.")
+            logger.info("data.db deleted.")
         else:
             new_name = input("Enter a new name for the database file: ")
             os.rename("data.db", new_name)
-            logging.info(f"data.db renamed to {new_name}.")
+            logger.info(f"data.db renamed to {new_name}.")
 
     init_database()
 
@@ -209,9 +209,9 @@ def main():
         setup_successful = True
 
     if setup_successful:
-        logging.info("Setup completed successfully")
+        logger.info("Setup completed successfully")
     else:
-        logging.error("Setup failed. Please check the errors above and try again.")
+        logger.error("Setup failed. Please check the errors above and try again.")
 
 
 if __name__ == "__main__":

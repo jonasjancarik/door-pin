@@ -1,7 +1,7 @@
 import os
 import datetime
 import time
-import logging
+from src.logger import logger
 from sqlalchemy import (
     create_engine,
     Column,
@@ -20,10 +20,6 @@ import src.utils as utils
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Initialize logging
-logging.basicConfig(level=os.getenv("LOG_LEVEL", logging.INFO))
-logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data.db")
 
