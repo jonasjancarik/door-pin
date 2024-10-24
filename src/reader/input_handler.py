@@ -14,7 +14,7 @@ except ImportError:
 
 load_dotenv()
 
-INPUT_MODE = os.getenv("INPUT_MODE", "stdin")
+INPUT_SOURCE = os.getenv("INPUT_SOURCE", "stdin")
 MAX_INPUT_LENGTH = 20  # Set a reasonable maximum length for input
 PIN_LENGTH = os.getenv("PIN_LENGTH", 4)
 
@@ -48,7 +48,7 @@ def decode_keypad_input(input_sequence):
 
 
 async def read_input(timeout=None):
-    if INPUT_MODE == "stdin":
+    if INPUT_SOURCE == "stdin":
         logging.info("Reading input from stdin")
         return await read_stdin(timeout)
     else:
@@ -129,7 +129,7 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                 if data.keystate == 1:  # Key down events only
                     key = process_key(data.keycode)
                     if key:
-                        if INPUT_MODE == "t9em":
+                        if INPUT_SOURCE == "t9em":
                             # Handle t9em input mode
                             if key == "ENTER":
                                 input_sequence = "".join(t9em_input_buffer)
