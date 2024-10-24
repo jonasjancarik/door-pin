@@ -40,6 +40,16 @@ def create_pin(pin_request: PINCreate, current_user: User = Depends(get_current_
         user_id = current_user.id
         target_user = current_user
 
+    # Check for unique PIN if the target user is a guest
+    if target_user.role == "guest":
+        all_pins = db.get_all_pins()
+        for pin in all_pins:
+            if utils.hash_secret(pin_request.pin, pin.salt) == pin.hashed_pin:
+                raise APIException(
+                    status_code=400,
+                    detail="PIN already in use, guests must use unique PINs",
+                )
+
     pin = db.save_pin(user_id, hashed_pin, pin_request.label, salt)
     return PINResponse(
         id=pin.id,
