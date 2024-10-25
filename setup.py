@@ -1,17 +1,12 @@
-import db
+from src import db
+from src.logger import logger
 import csv
 import os
-from src.logger import logger
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-
-# Configure logging
-logger.basicConfig(
-    level=logger.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 
 
 def init_database():

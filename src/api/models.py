@@ -52,7 +52,8 @@ class PINResponse(BaseModel):
 
 
 class PINUpdate(BaseModel):
-    label: str
+    pin: Optional[str] = None
+    label: Optional[str] = None
 
 
 class ApartmentCreate(BaseModel):
