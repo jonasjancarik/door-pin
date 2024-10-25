@@ -62,5 +62,5 @@ app.include_router(auth_router)
 configure_exception_handlers(app)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("API_PORT", 8000))
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host=os.environ.get("API_HOST", "localhost"), port=port)
