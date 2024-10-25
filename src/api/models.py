@@ -113,7 +113,8 @@ class RecurringScheduleCreate(BaseModel):
 
 
 class OneTimeAccessCreate(BaseModel):
-    access_date: date
+    start_date: date
+    end_date: date
     start_time: time
     end_time: time
 
@@ -127,7 +128,8 @@ class RecurringScheduleResponse(BaseModel):
 
 class OneTimeAccessResponse(BaseModel):
     id: int
-    access_date: str
+    start_date: str
+    end_date: str
     start_time: str
     end_time: str
 

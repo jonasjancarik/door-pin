@@ -62,8 +62,18 @@ def create_one_time_access(
             detail="Cannot modify access for guests from other apartments",
         )
 
+    if access.start_date > access.end_date:
+        raise APIException(
+            status_code=400,
+            detail="Start date must be before or equal to end date",
+        )
+
     new_access = db.add_one_time_access(
-        user_id, access.access_date, access.start_time, access.end_time
+        user_id,
+        access.start_date,
+        access.end_date,
+        access.start_time,
+        access.end_time,
     )
     return {"status": "One-time access created", "access_id": new_access.id}
 

@@ -145,7 +145,8 @@ class OneTimeAccess(Base):
     __tablename__ = "one_time_accesses"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    access_date = Column(Date, nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
     user = relationship("User", back_populates="one_time_access")
@@ -567,11 +568,12 @@ def add_recurring_schedule(user_id, day_of_week, start_time, end_time):
         return new_schedule
 
 
-def add_one_time_access(user_id, access_date, start_time, end_time):
+def add_one_time_access(user_id, start_date, end_date, start_time, end_time):
     with get_db() as db:
         new_access = OneTimeAccess(
             user_id=user_id,
-            access_date=access_date,
+            start_date=start_date,
+            end_date=end_date,
             start_time=start_time,
             end_time=end_time,
         )
@@ -640,6 +642,24 @@ def is_user_allowed_access(user_id):
     with get_db() as db:
         user = db.query(User).filter(User.id == user_id).first()
         if user and user.role == "guest":
+            # First check if the user has any schedules at all
+            has_recurring = (
+                db.query(RecurringSchedule)
+                .filter(RecurringSchedule.user_id == user_id)
+                .first()
+                is not None
+            )
+
+            has_one_time = (
+                db.query(OneTimeAccess).filter(OneTimeAccess.user_id == user_id).first()
+                is not None
+            )
+
+            # If no schedules exist, allow access
+            if not has_recurring and not has_one_time:
+                logger.info("Guest user has no schedules - allowing access")
+                return True
+
             now = datetime.datetime.now()
             current_time = now.time()
             current_date = now.date()
@@ -665,7 +685,8 @@ def is_user_allowed_access(user_id):
                 db.query(OneTimeAccess)
                 .filter(
                     OneTimeAccess.user_id == user_id,
-                    OneTimeAccess.access_date == current_date,
+                    OneTimeAccess.start_date <= current_date,
+                    OneTimeAccess.end_date >= current_date,
                     OneTimeAccess.start_time <= current_time,
                     OneTimeAccess.end_time >= current_time,
                 )

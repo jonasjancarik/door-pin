@@ -1,7 +1,7 @@
 import os
 import src.utils as utils
 from dotenv import load_dotenv
-from src.db import get_all_pins, get_all_rfids
+from src.db import get_all_pins, get_all_rfids, is_user_allowed_access
 from src.reader.input_handler import read_input
 from src.logger import logger
 from src.door_manager import door_manager
@@ -17,12 +17,21 @@ reader_task = None
 
 
 def check_input(input_value):
-    # todo: yes we could probably check the length of the input and if it's over the max length of a PIN
-
     # Check if it's a PIN
     all_pins = get_all_pins()
     for pin in all_pins:
         if utils.hash_secret(input_value, pin.salt) == pin.hashed_pin:
+            # If it's a guest user, check their access schedule
+            if pin.user.role == "guest":
+                if is_user_allowed_access(pin.user.id):
+                    logger.info("Valid PIN used by guest with valid access schedule")
+                    return True
+                else:
+                    logger.warning(
+                        "Valid PIN used by guest outside of allowed schedule"
+                    )
+                    return False
+            # For non-guest users, allow access
             logger.info("Valid PIN used")
             return True
 
@@ -30,12 +39,21 @@ def check_input(input_value):
     all_rfids = get_all_rfids()
     for rfid in all_rfids:
         if utils.hash_secret(input_value, rfid.salt) == rfid.hashed_uuid:
+            # If it's a guest user, check their access schedule
+            if rfid.user.role == "guest":
+                if is_user_allowed_access(rfid.user.id):
+                    logger.info("Valid RFID used by guest with valid access schedule")
+                    return True
+                else:
+                    logger.warning(
+                        "Valid RFID used by guest outside of allowed schedule"
+                    )
+                    return False
+            # For non-guest users, allow access
             logger.info("Valid RFID used")
             return True
 
-    logger.warning(
-        "Invalid PIN or RFID attempted (this is normal after /rfids/read)"
-    )  # todo: can we detect that this is the result of /rfids/read being called?
+    logger.warning("Invalid PIN or RFID attempted (this is normal after /rfids/read)")
     return False
 
 
