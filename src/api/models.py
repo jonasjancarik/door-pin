@@ -37,7 +37,7 @@ class RFIDResponse(BaseModel):
 
 
 class PINCreate(BaseModel):
-    pin: str
+    pin: Optional[str] = None
     label: Optional[str] = None
     user_id: Optional[int] = None
 
@@ -48,6 +48,7 @@ class PINResponse(BaseModel):
     created_at: str
     user_id: int
     user_email: str
+    pin: Optional[str] = None  # Only included for guest users when creating new PINs
 
 
 class PINUpdate(BaseModel):
