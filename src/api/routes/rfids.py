@@ -6,7 +6,13 @@ from ..dependencies import get_current_user
 import src.db as db
 import src.utils as utils
 from src.logger import logger
-from ...reader.reader import read_single_input
+from ...reader.reader import (
+    read_single_input,
+    start_reader,
+    stop_reader,
+    get_reader_status,
+)
+
 
 router = APIRouter(prefix="/rfids", tags=["rfids"])
 
@@ -66,13 +72,21 @@ def create_rfid(
 async def read_rfid(timeout: int, user: User = Depends(get_current_user)):
     logger.info(f"Attempting to read RFID with timeout: {timeout}")
     try:
+        # stop reader if it's running
+        if get_reader_status() == "running":
+            logger.info("Stopping reader before reading RFID")
+            stop_reader()
         rfid_uuid = await read_single_input(timeout=min(timeout, 30))
         if not rfid_uuid:
             logger.warning("No RFID scanned within timeout period")
             return APIException(
                 status_code=404, detail="No RFID scanned within timeout period"
             )
-        logger.info(f"Successfully read£ RFID: {rfid_uuid}")
+        logger.info(f"Successfully read RFID: {rfid_uuid}")
+        # start reader if it was stopped
+        if get_reader_status() == "stopped":
+            logger.info("Starting reader after reading RFID")
+            start_reader()
         return {"uuid": rfid_uuid}
     except Exception as e:
         logger.error(f"Error reading RFID: {str(e)}")
