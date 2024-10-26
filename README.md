@@ -24,7 +24,7 @@ If you are using a Raspberry Pi 5, you might need to replace `rpi-gpio` with `rp
 
 ### Development
 
-For development on a machine which doesn't support `RPi.GPIO` and `evdev`, run `grep -vE '^(RPi\.GPIO|evdev)' requirements.txt | pip install -r /dev/stdin` instead of the usual `pip install -r requirements.txt` to exclude these packages.
+For development on a machine which doesn't support `RPi.GPIO` and `evdev`, run just `pip install fastapi sqlalchemy boto3 python-dotenv uvicorn "pydantic[email]"` to exclude these packages.
 
 Then create a `RPi` package with a dummy `GPIO` module to avoid errors:
 
