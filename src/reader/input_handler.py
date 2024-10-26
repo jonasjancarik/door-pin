@@ -54,21 +54,24 @@ async def read_input():
     else:
         logger.info("Reading input from evdev")
         try:
-            # Create a queue for input events
             input_queue = asyncio.Queue()
-            # Start the input reading task
             read_task = asyncio.create_task(read_evdev(input_queue))
 
             try:
-                # Just wait for the input without timeout
                 result = await input_queue.get()
-                read_task.cancel()  # Cancel the reading task once we have input
+                read_task.cancel()
+                try:
+                    await read_task
+                except asyncio.CancelledError:
+                    pass
                 return result
             except Exception as e:
+                read_task.cancel()
                 try:
-                    read_task.cancel()
-                except Exception as e:
-                    logger.error(f"Error cancelling read_task: {e}")
+                    await read_task
+                except asyncio.CancelledError:
+                    pass
+                logger.error(f"Error in read_input: {e}")
                 return None
         except Exception as e:
             logger.error(f"Error in read_input: {e}")
@@ -77,7 +80,7 @@ async def read_input():
 
 async def read_stdin():
     timeout = int(os.getenv("INPUT_TIMEOUT", 10))
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         input_value = await asyncio.wait_for(
             loop.run_in_executor(None, input, "You can enter PIN or RFID now...\n"),
@@ -146,15 +149,14 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
                 if data.keystate == 1:  # Key down events only
-                    # Start timing from first keypress
                     if not first_key_received:
                         first_key_received = True
-                        start_time = asyncio.get_event_loop().time()
+                        start_time = asyncio.get_running_loop().time()
 
                     key = process_key(data.keycode)
                     if key:
                         if start_time is not None:
-                            if asyncio.get_event_loop().time() - start_time > timeout:
+                            if asyncio.get_running_loop().time() - start_time > timeout:
                                 logger.debug(
                                     "Timeout reached after first keypress, clearing buffers"
                                 )
