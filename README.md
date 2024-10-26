@@ -15,10 +15,12 @@ We're using GPIO pin number 18 - this is hardcoded in `utils.py`.
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -r requirements.txt
+pip install fastapi sqlalchemy boto3 python-dotenv uvicorn "pydantic[email]" rpi-gpio evdev
 ```
 
 If you encounter an error installing `evdev`, try installing the `python3-evdev` package with `sudo apt-get install python3-evdev`.
+
+If you are using a Raspberry Pi 5, you might need to replace `rpi-gpio` with `rpi-lgpio` due to compatibility issues.
 
 ### Development
 
