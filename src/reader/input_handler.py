@@ -35,12 +35,19 @@ KEY_CODES = {
 
 
 def find_keyboards():
-    devices = [InputDevice(path) for path in list_devices()]
-    return [
-        device
-        for device in devices
-        if "keyboard" in device.name.lower() or "event" in device.path
-    ]
+    device_paths = list_devices()
+    keyboards = []
+    for path in device_paths:
+        device = InputDevice(path)
+        try:
+            if "keyboard" in device.name.lower() or "event" in device.path:
+                keyboards.append(device)
+            else:
+                device.close()  # Close devices that are not keyboards
+        except Exception as e:
+            logger.error(f"Error accessing device {path}: {e}")
+            device.close()
+    return keyboards
 
 
 def decode_keypad_input(input_sequence):
@@ -65,10 +72,11 @@ async def read_input():
                 read_task.cancel()  # Cancel the reading task once we have input
                 return result
             except Exception as e:
+                logger.error(f"Error in read_input: {e}")
                 try:
                     read_task.cancel()
-                except Exception as e:
-                    logger.error(f"Error cancelling read_task: {e}")
+                except Exception as cancel_exception:
+                    logger.error(f"Error cancelling read_task: {cancel_exception}")
                 return None
         except Exception as e:
             logger.error(f"Error in read_input: {e}")
@@ -76,16 +84,15 @@ async def read_input():
 
 
 async def read_stdin():
-    timeout = int(os.getenv("INPUT_TIMEOUT", 10))
     loop = asyncio.get_event_loop()
     try:
-        input_value = await asyncio.wait_for(
-            loop.run_in_executor(None, input, "You can enter PIN or RFID now...\n"),
-            timeout=timeout,
+        # Remove wait_for and just use run_in_executor directly
+        input_value = await loop.run_in_executor(
+            None, input, "You can enter PIN or RFID now...\n"
         )
         return input_value.strip()
-    except asyncio.TimeoutError:
-        logger.warning("Input timeout reached.")
+    except Exception as e:
+        logger.error(f"Error in read_stdin: {e}")
         return None
 
 
@@ -129,7 +136,7 @@ async def read_evdev(input_queue):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.error(f"Error in read_evdev: {e}")
+                logger.error(f"Error in read_evdev during task cancellation: {e}")
                 raise
     except Exception as e:
         logger.error(f"Error in read_evdev: {e}")
@@ -195,6 +202,8 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
     except Exception as e:
         logger.error(f"Error reading keyboard events: {e}")
         raise
+    finally:
+        device.close()  # Ensure the InputDevice is closed properly
 
 
 def process_key(keycode):

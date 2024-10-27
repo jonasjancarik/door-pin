@@ -24,7 +24,7 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     start_reader()
     yield
-    stop_reader()
+    await stop_reader()
 
 
 app = FastAPI(lifespan=lifespan)

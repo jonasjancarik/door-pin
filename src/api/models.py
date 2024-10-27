@@ -81,7 +81,7 @@ class User(BaseModel):
     apartment: ApartmentResponse
 
     class Config:
-        orm_mode = True  # This tells Pydantic to work with ORM models
+        from_attributes = True  # This tells Pydantic to work with ORM models
 
 
 class UserCreate(BaseModel):

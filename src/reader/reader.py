@@ -83,7 +83,6 @@ async def input_reader():
 async def input_processor():
     """Processes input from the queue"""
     while task_running:
-        # print("Waiting for a complete PIN or RFID input...", flush=True)
         try:
             # Use a timeout here to allow checking task_running periodically
             input_value = await asyncio.wait_for(input_queue.get(), timeout=1)
@@ -98,6 +97,9 @@ async def input_processor():
         except asyncio.TimeoutError:
             logger.debug("Timeout reached in input processor")
             continue  # Just continue if no input received
+        except asyncio.CancelledError:
+            logger.info("Input processor cancelled")
+            break
         except Exception as e:
             logger.error(f"Error in input processor: {e}")
 
@@ -118,14 +120,21 @@ def start_reader():
         logger.warning("Reader is already running")
 
 
-def stop_reader():
+async def stop_reader():
     global task_running, reader_status, reader_task
     if task_running:
         task_running = False
         reader_status = "stopped"
         if reader_task:
             reader_task.cancel()
-        logger.info("Reader stop requested")
+            try:
+                await reader_task
+            except asyncio.CancelledError:
+                pass  # Expected when cancelling tasks
+            except Exception as e:
+                logger.error(f"Error during reader shutdown: {e}")
+            finally:
+                logger.info("Reader stop requested")
     else:
         logger.warning("Reader is not running")
 
