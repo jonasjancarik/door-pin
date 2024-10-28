@@ -11,13 +11,14 @@ services:
       - .env
     ports:
       - "8000:8000"
-      - "8050:8050"
-    command: python api.py
+    command: sh -c "[ ! -f data.db ] && python setup.py; python api.py"
+    stdin_open: true
+    tty: true
 
-  db:
-    image: sqlite:latest
-    volumes:
-      - ./data:/data
+  # db:
+  #   image: sqlite:latest
+  #   volumes:
+  #     - ./data:/data
 
 networks:
   default:
