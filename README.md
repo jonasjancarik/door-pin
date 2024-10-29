@@ -6,21 +6,25 @@ You can find the client web app under [door-control-web-app](https://github.com/
 
 ## Hardware
 
+Tested on Raspberry PI 4 and 5. On Raspberry PI 3, you will have trouble installing the required packages (in particular rpi-gpio) with Python 3.11. The code contains some async stuff that won't work on Python 3.9 (which is the default on Raspberry PI 3).
+
+This will work with any relay operated lock that you can control from the GPIO pins of a Raspberry PI.
+
 Works with the I/O Module from SÜDMETALL (https://www.suedmetall.com/products/locking-systems/stand-alone-solutions/i-o-modul/?lang=en). You have to set up wiring so that the PI sends a door unlocking signal by activating a relay on a 12-24 V circuit connected to the I/O module.
 
-We're using GPIO pin number 18 - this is hardcoded in `utils.py`. 
+By default, the code expects the relay to be connected to GPIO pin 18, but this can be changed by setting the `RELAY_PIN` environment variable.
 
 ## Install
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install fastapi sqlalchemy boto3 python-dotenv uvicorn "pydantic[email]" rpi-gpio evdev
+pip install -r requirements.txt
 ```
 
-If you encounter an error installing `evdev`, try installing the `python3-evdev` package with `sudo apt-get install python3-evdev`.
+If you encounter an error installing `evdev`, try installing the `python3-evdev` package with `sudo apt-get install python3-evdev`. In that case you may want to create the virtual environment with the `--system-site-packages` flag (i.e. `python -m venv .venv --system-site-packages`) and ignore the `evdev` package in the `requirements.txt` file with `grep -v "evdev" requirements.txt | pip install -r /dev/stdin`.
 
-If you are using a Raspberry Pi 5, you might need to replace `rpi-gpio` with `rpi-lgpio` due to compatibility issues.
+If you want to get the latest versions of all the required packages, you can try running `pip install fastapi sqlalchemy boto3 python-dotenv uvicorn "pydantic[email]" rpi-lgpio evdev` directly.
 
 ### Development
 
@@ -81,6 +85,32 @@ On the Raspberry PI, set up reverse port forwarding like this:
 
 ```bash
 ssh -R 8000:localhost:8000 <server>
+```
+
+Or use autossh to keep the connection alive, for example:
+
+```bash
+autossh -M 20000 -N -R 8000:localhost:8000 username@proxy-server -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3"
+```
+
+You can even set it up as a systemd service to run in the background like this:
+
+```bash
+[Unit]
+Description=AutoSSH tunnel service for port 4444
+After=network.target
+
+[Service]
+User=pi
+Group=pi
+ExecStart=/usr/bin/autossh -M 20000 -N -R 8000:localhost:8000 username@proxy-server -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3"
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 ## Usage
