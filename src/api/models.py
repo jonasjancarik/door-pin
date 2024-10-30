@@ -86,7 +86,7 @@ class User(BaseModel):
 
 class UserCreate(BaseModel):
     name: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     role: str
     apartment: ApartmentCreate
 

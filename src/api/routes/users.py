@@ -22,13 +22,10 @@ def create_user(
             status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
         )
 
-    if (
-        not ((apartment := new_user.apartment) and apartment.number)
-        or not new_user.email
-    ):
+    if not ((apartment := new_user.apartment) and apartment.number):
         raise APIException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing apartment, apartment number, or email",
+            detail="Missing apartment or apartment number",
         )
 
     if new_user.role and new_user.role == "admin" and current_user.role != "admin":
@@ -50,12 +47,13 @@ def create_user(
             detail="You can only create users for your own apartment",
         )
 
-    existing_user = db.get_user(new_user.email)
-    if existing_user:
-        raise APIException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"User with email {new_user.email} already exists",
-        )
+    if new_user.email:
+        existing_user = db.get_user(new_user.email)
+        if existing_user:
+            raise APIException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"User with email {new_user.email} already exists",
+            )
 
     created_user = db.add_user(
         {

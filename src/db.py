@@ -64,7 +64,7 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    email = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=True)
     role = Column(
         String, default="apartment_admin"
     )  # Can be 'apartment_admin', 'admin', or 'guest'
