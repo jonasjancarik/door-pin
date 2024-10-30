@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import date, time
 
@@ -90,11 +90,18 @@ class UserCreate(BaseModel):
     role: str
     apartment: ApartmentCreate
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if v == "":
+            return None
+        return v
+
 
 class UserResponse(BaseModel):
     id: int
     name: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     role: str
     apartment: ApartmentResponse
 

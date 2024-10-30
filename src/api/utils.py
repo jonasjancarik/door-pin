@@ -69,7 +69,7 @@ def build_user_response(user):
     return {
         "id": user.id,
         "name": user.name,
-        "email": user.email,
+        "email": user.email if user.email else None,
         "apartment": apartment_return_format(user.apartment),
         "role": user.role,
     }
