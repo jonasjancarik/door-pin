@@ -177,11 +177,14 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                                 decoded_key = decode_keypad_input(input_sequence)
                                 if decoded_key:
                                     input_buffer.append(decoded_key)
-                                else:
-                                    input_buffer.append(input_sequence)
-                                result = "".join(input_buffer)
-                                await input_queue.put(result)
-                                input_buffer.clear()
+                                else:  # this means an rfid was scanned
+                                    await input_queue.put(input_sequence)
+                                    input_buffer.clear()  # should be empty anyway
+                                # check if the input buffer is the length of the PIN_LENGTH or longer
+                                if len(input_buffer) >= PIN_LENGTH:
+                                    result = "".join(input_buffer)
+                                    await input_queue.put(result)
+                                    input_buffer.clear()
                                 t9em_input_buffer.clear()
                                 first_key_received = False
                                 start_time = None
