@@ -17,6 +17,7 @@ By default, the code expects the relay to be connected to GPIO pin 18, but this 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
