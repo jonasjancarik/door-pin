@@ -10,9 +10,13 @@ router = APIRouter(prefix="/apartments", tags=["apartments"])
 
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[ApartmentResponse])
 def list_apartments(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise APIException(status_code=403, detail="Admin access required")
-    return [apartment_return_format(apartment) for apartment in db.get_all_apartments()]
+    if current_user.role == "admin":
+        return [
+            apartment_return_format(apartment) for apartment in db.get_all_apartments()
+        ]
+    else:
+        # For non-admin users, return only their apartment
+        return [apartment_return_format(current_user.apartment)]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ApartmentResponse)
