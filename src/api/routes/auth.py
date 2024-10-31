@@ -64,7 +64,9 @@ def send_magic_link(request: LoginRequest):
         raise APIException(status_code=500, detail="Server configuration error")
 
     subject = "Your Login Code"
-    body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p><p>Alternatively, you can click this link to log in: <a href='{url_to_use}?login_code={login_code}'>Log In</a></p></center></body></html>"""
+    body_html = f"""<html><body><center><h1>Your Login Code</h1><p>Please use this code to log in:</p><p>{login_code}</p>"""
+
+    # <p>Alternatively, you can click this link to log in: <a href='{url_to_use}login?login_code={login_code}'>Log In</a></p></center></body></html>""" # todo: need to pass the email to the login page and update the frontend to use it
 
     try:
         response = ses_client.send_email(
