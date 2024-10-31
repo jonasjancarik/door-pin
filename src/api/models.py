@@ -32,7 +32,7 @@ class RFIDResponse(BaseModel):
     label: str
     created_at: str
     user_id: int
-    user_email: str
+    user_email: Optional[str] = None
     last_four_digits: str
 
 
@@ -47,7 +47,7 @@ class PINResponse(BaseModel):
     label: str
     created_at: str
     user_id: int
-    user_email: str
+    user_email: Optional[str] = None
     pin: Optional[str] = None  # Only included for guest users when creating new PINs
 
 
@@ -101,6 +101,7 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: int
     name: str
+    # Email is optional to support users without email access (e.g., PIN-only users)
     email: Optional[EmailStr] = None
     role: str
     apartment: ApartmentResponse
