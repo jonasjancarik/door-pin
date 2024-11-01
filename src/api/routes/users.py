@@ -112,8 +112,38 @@ def update_user(
     updated_user: UserUpdate,
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role != "admin":
-        raise APIException(status_code=403, detail="Admin access required")
+    if current_user.role not in ["admin", "apartment_admin"]:
+        raise APIException(status_code=403, detail="Insufficient permissions")
+
+    user_to_update = db.get_user(user_id)
+    if not user_to_update:
+        raise APIException(status_code=404, detail="User not found")
+
+    if current_user.role == "apartment_admin":
+        # Check if user is in the same apartment
+        if user_to_update.apartment_id != current_user.apartment_id:
+            raise APIException(
+                status_code=403, detail="Cannot update users from other apartments"
+            )
+        # Check if trying to set role to admin
+        if updated_user.role == "admin":
+            raise APIException(
+                status_code=403, detail="Only admins can promote users to admin role"
+            )
+        # Check if trying to update an admin
+        if user_to_update.role == "admin":
+            raise APIException(
+                status_code=403, detail="Apartment admins cannot modify admin users"
+            )
+        # Check if trying to change apartment
+        if (
+            updated_user.apartment
+            and updated_user.apartment.number != user_to_update.apartment.number
+        ):
+            raise APIException(
+                status_code=403, detail="Only admins can move users between apartments"
+            )
+
     try:
         updated_user_to_return = db.update_user(
             user_id, updated_user.dict(exclude_unset=True)
@@ -121,13 +151,7 @@ def update_user(
         if not updated_user_to_return:
             raise APIException(status_code=404, detail="User not found")
 
-        return UserResponse(
-            id=updated_user_to_return.id,
-            name=updated_user_to_return.name,
-            email=updated_user_to_return.email,
-            role=updated_user_to_return.role,
-            apartment_number=updated_user_to_return.apartment.number,
-        )
+        return build_user_response(updated_user_to_return)
     except ValueError as e:
         raise APIException(status_code=400, detail=str(e))
 

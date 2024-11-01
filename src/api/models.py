@@ -75,7 +75,7 @@ class ApartmentUpdate(BaseModel):
 class User(BaseModel):
     id: int
     name: str
-    email: str
+    email: Optional[EmailStr] = None
     role: str
     apartment_id: int
     apartment: ApartmentResponse
@@ -107,11 +107,22 @@ class UserResponse(BaseModel):
     apartment: ApartmentResponse
 
 
+class ApartmentNumberUpdate(BaseModel):
+    number: str
+
+
 class UserUpdate(BaseModel):
     name: Optional[str]
-    email: Optional[EmailStr]
+    email: Optional[EmailStr] = None
     role: Optional[str]
-    apartment_number: Optional[int]
+    apartment: Optional[ApartmentNumberUpdate]
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if v == "":
+            return None
+        return v
 
 
 class RecurringScheduleCreate(BaseModel):

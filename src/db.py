@@ -214,7 +214,12 @@ def get_apartment_by_number(number):
 
 def get_apartment_users(apartment_id):
     with get_db() as db:
-        apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
+        apartment = (
+            db.query(Apartment)
+            .options(joinedload(Apartment.users).joinedload(User.apartment))
+            .filter(Apartment.id == apartment_id)
+            .first()
+        )
         if apartment:
             return apartment.users
         return []
@@ -243,10 +248,11 @@ def update_user(user_id, updated_user):
 
         if "email" in updated_user:
             new_email = updated_user["email"]
-            existing_user = db.query(User).filter(User.email == new_email).first()
-            if existing_user and existing_user.id != user_id:
-                logger.error(f"User with email {new_email} already exists")
-                raise ValueError(f"User with email {new_email} already exists")
+            if new_email is not None:
+                existing_user = db.query(User).filter(User.email == new_email).first()
+                if existing_user and existing_user.id != user_id:
+                    logger.error(f"User with email {new_email} already exists")
+                    raise ValueError(f"User with email {new_email} already exists")
 
         for key, value in updated_user.items():
             if key == "apartment":
@@ -257,7 +263,7 @@ def update_user(user_id, updated_user):
                         .first()
                     )
                     if apartment:
-                        user.apartment = apartment
+                        user.apartment = apartment  # todo!: updating user shouldn't be misused to update apartment. This currently allows apartment_admins to change the apartments of other users (not just the number)
                     else:
                         logger.error(
                             f"Apartment with number {value['number']} not found"
@@ -270,7 +276,7 @@ def update_user(user_id, updated_user):
 
         db.commit()
         db.refresh(user)
-        logger.info(f"User {user.email} updated")
+        logger.info(f"User {user.id} updated")
         return user
 
 
