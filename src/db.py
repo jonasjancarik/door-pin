@@ -532,6 +532,13 @@ def remove_apartment(apartment_id):
     with get_db() as db:
         apartment = db.query(Apartment).filter(Apartment.id == apartment_id).first()
         if apartment:
+            # Check if there are any users associated with this apartment
+            if apartment.users:
+                logger.error(
+                    f"Cannot delete apartment {apartment.number} - it still has users associated with it"
+                )
+                return False
+
             db.delete(apartment)
             db.commit()
             logger.info(f"Apartment {apartment.number} deleted")

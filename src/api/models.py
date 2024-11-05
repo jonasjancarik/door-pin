@@ -104,7 +104,7 @@ class UserResponse(BaseModel):
     # Email is optional to support users without email access (e.g., PIN-only users)
     email: Optional[EmailStr] = None
     role: str
-    apartment: ApartmentResponse
+    apartment: Optional[ApartmentResponse] = None
 
 
 class ApartmentNumberUpdate(BaseModel):

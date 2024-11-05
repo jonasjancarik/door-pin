@@ -51,6 +51,11 @@ def update_apartment(
 def delete_apartment(apartment_id: int, current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise APIException(status_code=403, detail="Admin access required")
+
     if db.remove_apartment(apartment_id):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
-    raise APIException(status_code=404, detail="Apartment not found")
+    else:
+        raise APIException(
+            status_code=400,
+            detail="Cannot delete apartment - please remove all users from this apartment first",
+        )
