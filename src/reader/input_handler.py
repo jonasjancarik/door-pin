@@ -96,7 +96,9 @@ async def read_stdin():
         return None
 
 
-async def read_evdev(input_queue):
+async def read_evdev(
+    input_queue,
+):  # input_queue is a queue that is continuously processed in the parent function
     try:
         keyboards = find_keyboards()
         if not keyboards:
@@ -104,8 +106,12 @@ async def read_evdev(input_queue):
             return None
 
         # Create shared buffers
-        input_buffer = deque(maxlen=MAX_INPUT_LENGTH)
-        t9em_input_buffer = deque(maxlen=10)
+        input_buffer = deque(
+            maxlen=MAX_INPUT_LENGTH
+        )  # input buffer holds the individual characters of a PIN or RFID ID
+        t9em_input_buffer = deque(
+            maxlen=10
+        )  # t9em input buffer holds the encoded input sequence of that specific keypad - after each ENTER, the buffer is decoded into a single character, which is then added to the input buffer. When an RFID is scanned, the buffer is directly filled with the actual value of the ID, meaning decoding will fail and the ID will be added to the input queue directly.
 
         # Create tasks for each keyboard
         keyboard_tasks = []
@@ -145,76 +151,81 @@ async def read_evdev(input_queue):
 
 async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_queue):
     timeout = int(os.getenv("INPUT_TIMEOUT", 10))
+    timer_state = {"last_keypress": None}
+
     try:
-        first_key_received = False
-        start_time = None
-
         async for event in device.async_read_loop():
-            if event.type == ecodes.EV_KEY:
-                data = categorize(event)
-                if data.keystate == 1:  # Key down events only
-                    # Start timing from first keypress
-                    if not first_key_received:
-                        first_key_received = True
-                        start_time = asyncio.get_event_loop().time()
+            if event.type != ecodes.EV_KEY or categorize(event).keystate != 1:
+                continue
 
-                    key = process_key(data.keycode)
-                    if key:
-                        if start_time is not None:
-                            if asyncio.get_event_loop().time() - start_time > timeout:
-                                logger.debug(
-                                    "Timeout reached after first keypress, clearing buffers"
-                                )
-                                input_buffer.clear()
-                                t9em_input_buffer.clear()
-                                first_key_received = False
-                                start_time = None
+            current_time = asyncio.get_event_loop().time()
+            key = process_key(categorize(event).keycode)
+            if not key:
+                continue
 
-                        if INPUT_SOURCE == "t9em":
-                            # Handle t9em input mode
-                            if key == "ENTER":
-                                input_sequence = "".join(t9em_input_buffer)
-                                decoded_key = decode_keypad_input(input_sequence)
-                                if decoded_key:
-                                    if (
-                                        decoded_key == "*" or decoded_key == "#"
-                                    ):  # these buttons reset the input buffer
-                                        input_buffer.clear()
-                                        t9em_input_buffer.clear()
-                                        first_key_received = False
-                                        start_time = None
-                                    else:
-                                        input_buffer.append(decoded_key)
-                                else:  # this means an rfid was scanned
-                                    await input_queue.put(input_sequence)
-                                    input_buffer.clear()  # should be empty anyway
-                                # check if the input buffer is the length of the PIN_LENGTH or longer
-                                if len(input_buffer) >= PIN_LENGTH:
-                                    result = "".join(input_buffer)
-                                    await input_queue.put(result)
-                                    input_buffer.clear()
-                                t9em_input_buffer.clear()
-                                first_key_received = False
-                                start_time = None
-                            else:
-                                t9em_input_buffer.append(key)
-                        else:
-                            if key.isdigit() or (key.isalpha() and key != "ENTER"):
-                                input_buffer.append(key)
-                            elif key == "ENTER":
-                                result = "".join(input_buffer)
-                                await input_queue.put(result)
-                                input_buffer.clear()
-                                first_key_received = False
-                                start_time = None
+            # Handle first keypress or timeout
+            if not timer_state["last_keypress"] or (
+                current_time - timer_state["last_keypress"] > timeout
+            ):
+                logger.debug("Timeout reached or first keypress, clearing buffers")
+                await reset_state(input_buffer, t9em_input_buffer)
+            timer_state["last_keypress"] = current_time
+
+            # Handle input based on mode
+            if INPUT_SOURCE == "t9em":
+                if key == "ENTER":
+                    await process_t9em_buffer(
+                        input_buffer, t9em_input_buffer, input_queue
+                    )
+                    timer_state["last_keypress"] = (
+                        None  # Reset timer after complete input
+                    )
+                else:
+                    t9em_input_buffer.append(key)
+            else:
+                if key == "ENTER":
+                    await input_queue.put("".join(input_buffer))
+                    await reset_state(input_buffer, t9em_input_buffer)
+                    timer_state["last_keypress"] = (
+                        None  # Reset timer after complete input
+                    )
+                elif key.isdigit() or key.isalpha():
+                    input_buffer.append(key)
 
     except asyncio.CancelledError:
-        pass  # This is expected when the task is cancelled
+        pass
     except Exception as e:
         logger.error(f"Error reading keyboard events: {e}")
         raise
     finally:
-        device.close()  # Ensure the InputDevice is closed properly
+        device.close()
+
+
+def reset_state(input_buffer, t9em_input_buffer):
+    input_buffer.clear()
+    t9em_input_buffer.clear()
+
+
+async def process_t9em_buffer(input_buffer, t9em_input_buffer, input_queue):
+    input_sequence = "".join(t9em_input_buffer)
+    decoded_key = decode_keypad_input(input_sequence)
+    t9em_input_buffer.clear()  # Clear t9em buffer after processing
+
+    if not decoded_key:  # RFID scan
+        await input_queue.put(input_sequence)
+        reset_state(
+            input_buffer, t9em_input_buffer
+        )  # to be sure - input buffer should be empty anyway
+        return
+
+    if decoded_key in ["*", "#"]:
+        reset_state(input_buffer, t9em_input_buffer)
+        return
+
+    input_buffer.append(decoded_key)
+    if len(input_buffer) >= int(PIN_LENGTH):
+        await input_queue.put("".join(input_buffer))
+        reset_state(input_buffer, t9em_input_buffer)
 
 
 def process_key(keycode):
