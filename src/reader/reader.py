@@ -2,7 +2,7 @@ import os
 import src.utils as utils
 from dotenv import load_dotenv
 from src.db import get_all_pins, get_all_rfids, is_user_allowed_access
-from src.reader.input_handler import read_input
+from src.reader.input_handler import capture_input
 from src.logger import logger
 from src.door_manager import door_manager
 import asyncio
@@ -16,7 +16,8 @@ task_running = False
 reader_task = None
 
 
-def check_input(input_value):
+def validate_access_credentials(input_value):
+    """Validates PIN or RFID credentials and checks access permissions"""
     # Check if it's a PIN
     all_pins = get_all_pins()
     for pin in all_pins:
@@ -57,11 +58,11 @@ def check_input(input_value):
     return False
 
 
-async def input_reader():
-    """Continuously reads input and puts it into the queue"""
+async def collect_access_attempts():
+    """Continuously collects access attempts from input sources"""
     while task_running:
         try:
-            input_value = await read_input()
+            input_value = await capture_input()
             if input_value:
                 await input_queue.put(input_value)
             else:
@@ -80,15 +81,15 @@ async def input_reader():
             await asyncio.sleep(1)
 
 
-async def input_processor():
-    """Processes input from the queue"""
+async def process_access_requests():
+    """Processes and validates queued access requests"""
     while task_running:
         try:
             # Use a timeout here to allow checking task_running periodically
             input_value = await asyncio.wait_for(input_queue.get(), timeout=1)
             logger.debug(f"Input value: {input_value}")
             if input_value:
-                if check_input(input_value) is True:
+                if validate_access_credentials(input_value) is True:
                     await door_manager.unlock(
                         utils.unlock_door, utils.RELAY_ACTIVATION_TIME
                     )
@@ -111,8 +112,8 @@ def start_reader():
         reader_status = "running"
         loop = asyncio.get_event_loop()
         # Create separate tasks for reader and processor
-        reader_task_1 = loop.create_task(input_reader())
-        reader_task_2 = loop.create_task(input_processor())
+        reader_task_1 = loop.create_task(collect_access_attempts())
+        reader_task_2 = loop.create_task(process_access_requests())
         # Store both tasks
         reader_task = asyncio.gather(reader_task_1, reader_task_2)
         logger.info("Reader started")
@@ -144,11 +145,11 @@ def get_reader_status():
     return reader_status
 
 
-async def read_single_input(timeout):
-    """For one-off input reading (like RFID registration)"""
+async def capture_registration_input(timeout):
+    """Captures a single input for registration purposes (like RFID enrollment)"""
     try:
         # Start a temporary reading task
-        read_task = asyncio.create_task(read_input())
+        read_task = asyncio.create_task(capture_input())
 
         try:
             # Wait for input with timeout
@@ -165,5 +166,5 @@ async def read_single_input(timeout):
                 except asyncio.CancelledError:
                     pass
     except Exception as e:
-        logger.error(f"Error in read_single_input: {e}")
+        logger.error(f"Error in capture_registration_input: {e}")
         return None

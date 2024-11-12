@@ -54,17 +54,18 @@ def decode_keypad_input(input_sequence):
     return KEY_CODES.get(input_sequence, "")
 
 
-async def read_input():
+async def capture_input():
+    """Captures a single input sequence from configured input source (stdin or keyboard)"""
     if INPUT_SOURCE == "stdin":
         logger.info("Reading input from stdin")
-        return await read_stdin()
+        return await capture_console_input()
     else:
         logger.info("Reading input from evdev")
         try:
             # Create a queue for input events
             input_queue = asyncio.Queue()
             # Start the input reading task
-            read_task = asyncio.create_task(read_evdev(input_queue))
+            read_task = asyncio.create_task(handle_keyboard_devices(input_queue))
 
             try:
                 # Just wait for the input without timeout
@@ -72,18 +73,19 @@ async def read_input():
                 read_task.cancel()  # Cancel the reading task once we have input
                 return result
             except Exception as e:
-                logger.error(f"Error in read_input: {e}")
+                logger.error(f"Error in capture_input: {e}")
                 try:
                     read_task.cancel()
                 except Exception as cancel_exception:
                     logger.error(f"Error cancelling read_task: {cancel_exception}")
                 return None
         except Exception as e:
-            logger.error(f"Error in read_input: {e}")
+            logger.error(f"Error in capture_input: {e}")
             return None
 
 
-async def read_stdin():
+async def capture_console_input():
+    """Captures input directly from console/terminal"""
     loop = asyncio.get_event_loop()
     try:
         # Remove wait_for and just use run_in_executor directly
@@ -92,13 +94,12 @@ async def read_stdin():
         )
         return input_value.strip()
     except Exception as e:
-        logger.error(f"Error in read_stdin: {e}")
+        logger.error(f"Error in capture_console_input: {e}")
         return None
 
 
-async def read_evdev(
-    input_queue,
-):  # input_queue is a queue that is continuously processed in the parent function
+async def handle_keyboard_devices(input_queue):
+    """Manages multiple keyboard devices and their input buffers"""
     try:
         keyboards = find_keyboards()
         if not keyboards:
@@ -117,7 +118,7 @@ async def read_evdev(
         keyboard_tasks = []
         for keyboard in keyboards:
             task = asyncio.create_task(
-                read_keyboard_events(
+                handle_device_events(
                     keyboard, input_buffer, t9em_input_buffer, input_queue
                 )
             )
@@ -142,14 +143,17 @@ async def read_evdev(
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.error(f"Error in read_evdev during task cancellation: {e}")
+                logger.error(
+                    f"Error in handle_keyboard_devices during task cancellation: {e}"
+                )
                 raise
     except Exception as e:
-        logger.error(f"Error in read_evdev: {e}")
+        logger.error(f"Error in handle_keyboard_devices: {e}")
         raise
 
 
-async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_queue):
+async def handle_device_events(device, input_buffer, t9em_input_buffer, input_queue):
+    """Processes raw events from a single keyboard device"""
     timeout = int(os.getenv("INPUT_TIMEOUT", 10))
     timer_state = {"last_keypress": None}
 
@@ -159,7 +163,7 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                 continue
 
             current_time = asyncio.get_event_loop().time()
-            key = process_key(categorize(event).keycode)
+            key = parse_key_event(categorize(event).keycode)
             if not key:
                 continue
 
@@ -168,13 +172,13 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                 current_time - timer_state["last_keypress"] > timeout
             ):
                 logger.debug("Timeout reached or first keypress, clearing buffers")
-                await reset_state(input_buffer, t9em_input_buffer)
+                await clear_input_buffers(input_buffer, t9em_input_buffer)
             timer_state["last_keypress"] = current_time
 
             # Handle input based on mode
             if INPUT_SOURCE == "t9em":
                 if key == "ENTER":
-                    await process_t9em_buffer(
+                    await handle_t9em_sequence(
                         input_buffer, t9em_input_buffer, input_queue
                     )
                     timer_state["last_keypress"] = (
@@ -185,7 +189,7 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
             else:
                 if key == "ENTER":
                     await input_queue.put("".join(input_buffer))
-                    await reset_state(input_buffer, t9em_input_buffer)
+                    await clear_input_buffers(input_buffer, t9em_input_buffer)
                     timer_state["last_keypress"] = (
                         None  # Reset timer after complete input
                     )
@@ -201,34 +205,37 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
         device.close()
 
 
-def reset_state(input_buffer, t9em_input_buffer):
+def clear_input_buffers(input_buffer, t9em_input_buffer):
+    """Clears all input buffers"""
     input_buffer.clear()
     t9em_input_buffer.clear()
 
 
-async def process_t9em_buffer(input_buffer, t9em_input_buffer, input_queue):
+async def handle_t9em_sequence(input_buffer, t9em_input_buffer, input_queue):
+    """Processes T9 keypad input sequences"""
     input_sequence = "".join(t9em_input_buffer)
     decoded_key = decode_keypad_input(input_sequence)
     t9em_input_buffer.clear()  # Clear t9em buffer after processing
 
     if not decoded_key:  # RFID scan
         await input_queue.put(input_sequence)
-        reset_state(
+        clear_input_buffers(
             input_buffer, t9em_input_buffer
         )  # to be sure - input buffer should be empty anyway
         return
 
     if decoded_key in ["*", "#"]:
-        reset_state(input_buffer, t9em_input_buffer)
+        clear_input_buffers(input_buffer, t9em_input_buffer)
         return
 
     input_buffer.append(decoded_key)
     if len(input_buffer) >= int(PIN_LENGTH):
         await input_queue.put("".join(input_buffer))
-        reset_state(input_buffer, t9em_input_buffer)
+        clear_input_buffers(input_buffer, t9em_input_buffer)
 
 
-def process_key(keycode):
+def parse_key_event(keycode):
+    """Parses raw keycode into usable key value"""
     if isinstance(keycode, list):
         key_code = keycode[0]
     else:
