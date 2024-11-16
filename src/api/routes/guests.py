@@ -115,7 +115,8 @@ def list_guest_schedules(user_id: int, current_user: User = Depends(get_current_
         one_time_access=[
             {
                 "id": access.id,
-                "access_date": access.access_date.isoformat(),
+                "start_date": access.start_date.isoformat(),
+                "end_date": access.end_date.isoformat(),
                 "start_time": access.start_time.isoformat(),
                 "end_time": access.end_time.isoformat(),
             }
