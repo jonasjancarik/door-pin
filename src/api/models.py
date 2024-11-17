@@ -164,7 +164,7 @@ class APIKeyCreate(BaseModel):
 
 
 class APIKeyResponse(BaseModel):
-    key_prefix: str
+    key_suffix: str
     description: str
     created_at: str
     is_active: bool

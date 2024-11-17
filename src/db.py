@@ -155,7 +155,7 @@ class OneTimeAccess(Base):
 class APIKey(Base):
     __tablename__ = "api_keys"
 
-    key_prefix = Column(String(8), primary_key=True)
+    key_suffix = Column(String(4), primary_key=True)
     key_hash = Column(String(64), nullable=False)
     description = Column(String(200))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -709,3 +709,54 @@ def is_user_allowed_access(user_id):
             return one_time_access is not None
 
         return True  # Non-guest users are always allowed access
+
+
+def get_all_api_keys():
+    with get_db() as db:
+        return db.query(APIKey).all()
+
+
+def get_apartment_api_keys(apartment_id):
+    with get_db() as db:
+        return (
+            db.query(APIKey).join(User).filter(User.apartment_id == apartment_id).all()
+        )
+
+
+def get_user_api_keys(user_id):
+    with get_db() as db:
+        return db.query(APIKey).filter(APIKey.user_id == user_id).all()
+
+
+def add_api_key(suffix, key_hash, description, user_id):
+    with get_db() as db:
+        api_key = APIKey(
+            key_suffix=suffix,
+            key_hash=key_hash,
+            description=description,
+            user_id=user_id,
+        )
+        db.add(api_key)
+        db.commit()
+        db.refresh(api_key)
+        return api_key
+
+
+def delete_api_key(key_suffix):
+    with get_db() as db:
+        api_key = db.query(APIKey).filter(APIKey.key_suffix == key_suffix).first()
+        if api_key:
+            db.delete(api_key)
+            db.commit()
+            return True
+        return False
+
+
+def get_api_key(key_suffix):
+    with get_db() as db:
+        return db.query(APIKey).filter(APIKey.key_suffix == key_suffix).first()
+
+
+def get_api_key_owner(user_id):
+    with get_db() as db:
+        return db.query(User).filter(User.id == user_id).first()

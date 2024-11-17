@@ -20,11 +20,8 @@ def verify_api_key(db, api_key: str):
     Returns:
         APIKey object if valid, None if invalid
     """
-    if not api_key or len(api_key) < 8:
+    if not api_key:
         return None
-
-    # Get the prefix (first 8 characters)
-    prefix = api_key[:8]
 
     # Hash the full API key
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
@@ -33,7 +30,6 @@ def verify_api_key(db, api_key: str):
     api_key_obj = (
         db.query(APIKey)
         .filter(
-            APIKey.key_prefix == prefix,
             APIKey.key_hash == key_hash,
             APIKey.is_active,
         )
