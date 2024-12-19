@@ -3,6 +3,7 @@ import time
 from fastapi import HTTPException
 import hashlib
 from src.db import APIKey
+from sqlalchemy.orm import joinedload
 
 rate_limit = defaultdict(list)
 MAX_ATTEMPTS = 5
@@ -26,13 +27,14 @@ def verify_api_key(db, api_key: str):
     # Hash the full API key
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
-    # Query the database for a matching API key
+    # Query the database for a matching API key and eagerly load the user relationship
     api_key_obj = (
         db.query(APIKey)
         .filter(
             APIKey.key_hash == key_hash,
             APIKey.is_active,
         )
+        .options(joinedload(APIKey.user))
         .first()
     )
 
