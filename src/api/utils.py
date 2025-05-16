@@ -72,6 +72,7 @@ def build_user_response(user):
         if user.apartment
         else None,
         "role": user.role,
+        "is_active": user.is_active,
     }
 
 

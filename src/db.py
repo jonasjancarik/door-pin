@@ -70,6 +70,7 @@ class User(Base):
     )  # Can be 'apartment_admin', 'admin', or 'guest'
     creator_id = Column(String)
     apartment_id = Column(Integer, ForeignKey("apartments.id"))
+    is_active = Column(Boolean, nullable=False, default=True)
     apartment = relationship("Apartment", back_populates="users", lazy="joined")
     pins = relationship("Pin", back_populates="user")
     rfids = relationship("Rfid", back_populates="user", foreign_keys="[Rfid.user_id]")
@@ -654,7 +655,10 @@ def remove_one_time_access(access_id):
 def is_user_allowed_access(user_id):
     with get_db() as db:
         user = db.query(User).filter(User.id == user_id).first()
-        if user and user.role == "guest":
+        if not user or not user.is_active:  # Check if user exists and is active
+            return False
+
+        if user.role == "guest":
             # First check if the user has any schedules at all
             has_recurring = (
                 db.query(RecurringSchedule)
@@ -708,7 +712,9 @@ def is_user_allowed_access(user_id):
 
             return one_time_access is not None
 
-        return True  # Non-guest users are always allowed access
+        # Non-guest users need to be active, which we checked at the start.
+        # If they are active and not guests, they are allowed access.
+        return True
 
 
 def get_all_api_keys():

@@ -105,6 +105,7 @@ class UserResponse(BaseModel):
     email: Optional[EmailStr] = None
     role: str
     apartment: Optional[ApartmentResponse] = None
+    is_active: bool
 
 
 class ApartmentNumberUpdate(BaseModel):
@@ -112,10 +113,11 @@ class ApartmentNumberUpdate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    name: Optional[str]
+    name: Optional[str] = None
     email: Optional[EmailStr] = None
-    role: Optional[str]
-    apartment: Optional[ApartmentNumberUpdate]
+    role: Optional[str] = None
+    apartment: Optional[ApartmentNumberUpdate] = None
+    is_active: Optional[bool] = None
 
     @field_validator("email", mode="before")
     @classmethod

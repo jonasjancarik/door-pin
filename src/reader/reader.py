@@ -21,36 +21,58 @@ def check_input(input_value):
     all_pins = get_all_pins()
     for pin in all_pins:
         if utils.hash_secret(input_value, pin.salt) == pin.hashed_pin:
+            # First, check if the user is active
+            if not pin.user.is_active:
+                logger.warning(
+                    f"PIN used by inactive user {pin.user.id} ({pin.user.name}). Access denied."
+                )
+                return False
+
             # If it's a guest user, check their access schedule
             if pin.user.role == "guest":
                 if is_user_allowed_access(pin.user.id):
-                    logger.info("Valid PIN used by guest with valid access schedule")
+                    logger.info(
+                        f"Valid PIN used by guest {pin.user.id} ({pin.user.name}) with valid access schedule"
+                    )
                     return True
                 else:
                     logger.warning(
-                        "Valid PIN used by guest outside of allowed schedule"
+                        f"Valid PIN used by guest {pin.user.id} ({pin.user.name}) outside of allowed schedule"
                     )
                     return False
-            # For non-guest users, allow access
-            logger.info("Valid PIN used")
+            # For non-guest active users, allow access
+            logger.info(
+                f"Valid PIN used by active user {pin.user.id} ({pin.user.name})"
+            )
             return True
 
     # If not a PIN, check if it's an RFID
     all_rfids = get_all_rfids()
     for rfid in all_rfids:
         if utils.hash_secret(input_value, rfid.salt) == rfid.hashed_uuid:
+            # First, check if the user is active
+            if not rfid.user.is_active:
+                logger.warning(
+                    f"RFID used by inactive user {rfid.user.id} ({rfid.user.name}). Access denied."
+                )
+                return False
+
             # If it's a guest user, check their access schedule
             if rfid.user.role == "guest":
                 if is_user_allowed_access(rfid.user.id):
-                    logger.info("Valid RFID used by guest with valid access schedule")
+                    logger.info(
+                        f"Valid RFID used by guest {rfid.user.id} ({rfid.user.name}) with valid access schedule"
+                    )
                     return True
                 else:
                     logger.warning(
-                        "Valid RFID used by guest outside of allowed schedule"
+                        f"Valid RFID used by guest {rfid.user.id} ({rfid.user.name}) outside of allowed schedule"
                     )
                     return False
-            # For non-guest users, allow access
-            logger.info("Valid RFID used")
+            # For non-guest active users, allow access
+            logger.info(
+                f"Valid RFID used by active user {rfid.user.id} ({rfid.user.name})"
+            )
             return True
 
     logger.warning("Invalid PIN or RFID attempted (this is normal after /rfids/read)")
