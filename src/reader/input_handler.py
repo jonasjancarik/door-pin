@@ -37,16 +37,35 @@ KEY_CODES = {
 def find_keyboards():
     device_paths = list_devices()
     keyboards = []
+    logger.debug(f"Found {len(device_paths)} input devices")
+
     for path in device_paths:
         device = InputDevice(path)
         try:
-            if "keyboard" in device.name.lower() or "event" in device.path:
+            logger.debug(f"Checking device: {device.path} - {device.name}")
+            # Be more specific about what we consider a keyboard
+            device_name_lower = device.name.lower()
+            if (
+                "keyboard" in device_name_lower
+                or "keypad" in device_name_lower
+                or "rfid" in device_name_lower
+                or (
+                    "event" in device.path
+                    and any(
+                        cap in device.capabilities().get(1, [])
+                        for cap in [2, 3, 4, 5, 6, 7, 8, 9, 10]
+                    )
+                )
+            ):  # Check for digit keys
                 keyboards.append(device)
+                logger.info(f"Added keyboard device: {device.path} - {device.name}")
             else:
                 device.close()  # Close devices that are not keyboards
         except Exception as e:
             logger.error(f"Error accessing device {path}: {e}")
             device.close()
+
+    logger.info(f"Found {len(keyboards)} keyboard devices")
     return keyboards
 
 
@@ -103,16 +122,17 @@ async def read_evdev(input_queue):
             logger.error("No keyboards found.")
             return None
 
-        # Create shared buffers
+        # Create shared buffers and result flag
         input_buffer = deque(maxlen=MAX_INPUT_LENGTH)
         t9em_input_buffer = deque(maxlen=10)
+        result_found = asyncio.Event()  # Flag to prevent duplicate results
 
         # Create tasks for each keyboard
         keyboard_tasks = []
         for keyboard in keyboards:
             task = asyncio.create_task(
                 read_keyboard_events(
-                    keyboard, input_buffer, t9em_input_buffer, input_queue
+                    keyboard, input_buffer, t9em_input_buffer, input_queue, result_found
                 )
             )
             keyboard_tasks.append(task)
@@ -143,13 +163,19 @@ async def read_evdev(input_queue):
         raise
 
 
-async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_queue):
+async def read_keyboard_events(
+    device, input_buffer, t9em_input_buffer, input_queue, result_found
+):
     timeout = int(os.getenv("INPUT_TIMEOUT", 10))
     try:
         first_key_received = False
         start_time = None
 
         async for event in device.async_read_loop():
+            # Skip processing if result already found
+            if result_found.is_set():
+                break
+
             if event.type == ecodes.EV_KEY:
                 data = categorize(event)
                 if data.keystate == 1:  # Key down events only
@@ -186,12 +212,16 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                                     else:
                                         input_buffer.append(decoded_key)
                                 else:  # this means an rfid was scanned
-                                    await input_queue.put(input_sequence)
+                                    if not result_found.is_set():
+                                        result_found.set()
+                                        await input_queue.put(input_sequence)
                                     input_buffer.clear()  # should be empty anyway
                                 # check if the input buffer is the length of the PIN_LENGTH or longer
                                 if len(input_buffer) >= PIN_LENGTH:
-                                    result = "".join(input_buffer)
-                                    await input_queue.put(result)
+                                    if not result_found.is_set():
+                                        result_found.set()
+                                        result = "".join(input_buffer)
+                                        await input_queue.put(result)
                                     input_buffer.clear()
                                 t9em_input_buffer.clear()
                                 first_key_received = False
@@ -202,8 +232,10 @@ async def read_keyboard_events(device, input_buffer, t9em_input_buffer, input_qu
                             if key.isdigit() or (key.isalpha() and key != "ENTER"):
                                 input_buffer.append(key)
                             elif key == "ENTER":
-                                result = "".join(input_buffer)
-                                await input_queue.put(result)
+                                if not result_found.is_set():
+                                    result_found.set()
+                                    result = "".join(input_buffer)
+                                    await input_queue.put(result)
                                 input_buffer.clear()
                                 first_key_received = False
                                 start_time = None

@@ -42,7 +42,7 @@ def check_input(input_value):
                     return False
             # For non-guest active users, allow access
             logger.info(
-                f"Valid PIN used by active user {pin.user.id} ({pin.user.name})"
+                f"Valid PIN used by active user {pin.user.id} ({pin.user.name}) - PID: {os.getpid()}"
             )
             return True
 
@@ -71,7 +71,7 @@ def check_input(input_value):
                     return False
             # For non-guest active users, allow access
             logger.info(
-                f"Valid RFID used by active user {rfid.user.id} ({rfid.user.name})"
+                f"Valid RFID used by active user {rfid.user.id} ({rfid.user.name}) - PID: {os.getpid()}"
             )
             return True
 
@@ -136,10 +136,12 @@ def start_reader():
         reader_task_1 = loop.create_task(input_reader())
         reader_task_2 = loop.create_task(input_processor())
         # Store both tasks
-        reader_task = asyncio.gather(reader_task_1, reader_task_2)
-        logger.info("Reader started")
+        reader_task = asyncio.gather(
+            reader_task_1, reader_task_2, return_exceptions=True
+        )
+        logger.info(f"Reader started (PID: {os.getpid()})")
     else:
-        logger.warning("Reader is already running")
+        logger.warning(f"Reader is already running (PID: {os.getpid()})")
 
 
 async def stop_reader():

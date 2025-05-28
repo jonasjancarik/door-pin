@@ -35,30 +35,42 @@ log_formatter = logging.Formatter(
 )
 log_file = os.path.join(LOGS_DIR, "app.log")
 
-# File Handler
-file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 5, backupCount=5)
-file_handler.setFormatter(log_formatter)
-file_handler.setLevel(logging.INFO)
-
-# Console Handler
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_formatter)
-console_handler.setLevel(logging.INFO)
-
 # Get root logger
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
 
-# Get a specific logger for the app if needed, or use the root logger
+# Only configure handlers if they haven't been configured yet
+if not logger.hasHandlers():
+    logger.setLevel(logging.INFO)
+
+    # File Handler
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=1024 * 1024 * 5, backupCount=5
+    )
+    file_handler.setFormatter(log_formatter)
+    file_handler.setLevel(logging.INFO)
+
+    # Console Handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    console_handler.setLevel(logging.INFO)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+# Get a specific logger for the app
 app_logger = logging.getLogger("api")
+
+# Track if lifespan has been called to prevent duplicate startup
+_lifespan_started = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app_logger.info("Application startup: Starting RFID reader...")
-    start_reader()
+    global _lifespan_started
+    if not _lifespan_started:
+        _lifespan_started = True
+        app_logger.info("Application startup: Starting RFID reader...")
+        start_reader()
     yield
     app_logger.info("Application shutdown: Stopping RFID reader...")
     await stop_reader()
@@ -105,4 +117,10 @@ if __name__ == "__main__":
     app_logger.info(
         f"Starting server on {os.environ.get('API_HOST', 'localhost')}:{port}"
     )
-    uvicorn.run(app, host=os.environ.get("API_HOST", "localhost"), port=port)
+    uvicorn.run(
+        app,
+        host=os.environ.get("API_HOST", "localhost"),
+        port=port,
+        workers=1,  # Ensure single worker to prevent duplicate processes
+        reload=False,  # Disable reload to prevent duplicate startup
+    )

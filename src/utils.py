@@ -40,7 +40,7 @@ except Exception as e:
 
 async def unlock_door(duration=RELAY_ACTIVATION_TIME):
     try:
-        logger.info("Activating relay.")
+        logger.info(f"Activating relay. (PID: {os.getpid()})")
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(RELAY_PIN, GPIO.OUT)
         GPIO.output(RELAY_PIN, RELAY_ACTIVE_STATE)
@@ -51,7 +51,7 @@ async def unlock_door(duration=RELAY_ACTIVATION_TIME):
         # Deactivate after duration
         GPIO.output(RELAY_PIN, not RELAY_ACTIVE_STATE)
         GPIO.cleanup()
-        logger.info("Relay deactivated.")
+        logger.info(f"Relay deactivated. (PID: {os.getpid()})")
     except Exception as e:
         logger.error(f"Error in unlock_door: {e}")
         # Ensure we cleanup GPIO even if there's an error
