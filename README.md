@@ -91,51 +91,10 @@ If you want to get the latest versions of all the required packages, you can try
 
 For development on a machine which doesn't support `RPi.GPIO` and `evdev`, run just `pip install fastapi sqlalchemy boto3 python-dotenv uvicorn "pydantic[email]"` to exclude these packages.
 
-Then create a `RPi` package with a dummy `GPIO` module to avoid errors:
+Then run the setup script to create a dummy `RPi` package:
 
 ```bash
-mkdir RPi
-touch RPI/__init__.py
-touch RPi/GPIO.py
-```
-
-and add the following code to `RPi/GPIO.py`:
-
-```python
-def setmode(a):
-    print(a)
-
-
-def setup(a, b):
-    print(a)
-
-
-def output(a, b):
-    print(a)
-
-
-def cleanup():
-    print("a")
-
-
-def setwarnings(flag):
-    print("False")
-
-
-def LOW():
-    print("LOW")
-
-
-def HIGH():
-    print("HIGH")
-
-
-def BCM():
-    print("BCM")
-
-
-def OUT():
-    print("OUT")
+./setup_mock_rpi_gpio.sh
 ```
 
 ## Networking
