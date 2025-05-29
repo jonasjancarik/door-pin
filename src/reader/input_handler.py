@@ -231,15 +231,6 @@ async def read_keyboard_events(
                         else:
                             if key.isdigit() or (key.isalpha() and key != "ENTER"):
                                 input_buffer.append(key)
-                                # Check if the input buffer is the length of the PIN_LENGTH or longer
-                                if len(input_buffer) >= int(PIN_LENGTH):
-                                    if not result_found.is_set():
-                                        result_found.set()
-                                        result = "".join(input_buffer)
-                                        await input_queue.put(result)
-                                    input_buffer.clear()
-                                    first_key_received = False
-                                    start_time = None
                             elif key == "ENTER":
                                 if not result_found.is_set():
                                     result_found.set()
