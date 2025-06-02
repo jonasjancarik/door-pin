@@ -51,9 +51,14 @@ def validate_csv_structure(file_path: str) -> bool:
                     logger.error(f"Row {row_num}: email cannot be empty")
                     return False
 
-                if row_dict["role"] not in ["admin", "apartment_admin", "guest"]:
+                if row_dict["role"] not in [
+                    "admin",
+                    "apartment_admin",
+                    "user",
+                    "guest",
+                ]:
                     logger.error(
-                        f"Row {row_num}: invalid role. Must be admin, apartment_admin, or guest, got {row_dict['role']} instead."
+                        f"Row {row_num}: invalid role. Must be admin, apartment_admin, user, or guest, got {row_dict['role']} instead."
                     )
                     return False
 
@@ -160,9 +165,9 @@ def setup_interactively() -> None:
                 name = input(f"Enter the name for user {j + 1}: ")
                 email = input(f"Enter the email for user {j + 1}: ")
                 role = input(
-                    f"Enter the role for user {name} (admin/apartment_admin/guest) [apartment_admin]: "
+                    f"Enter the role for user {name} (admin/apartment_admin/user/guest) [apartment_admin]: "
                 ).lower()
-                if role not in ["admin", "apartment_admin", "guest"]:
+                if role not in ["admin", "apartment_admin", "user", "guest"]:
                     role = "apartment_admin"
 
                 user_data = {

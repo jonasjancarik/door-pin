@@ -41,6 +41,14 @@ def create_rfid(
                     detail="Cannot create RFIDs for users from other apartments",
                 )
             user_id = target_user.id
+        elif current_user.role == "user":
+            # Regular users can only create RFIDs for themselves
+            if target_user.id != current_user.id:
+                raise APIException(
+                    status_code=403,
+                    detail="Users can only create RFIDs for themselves",
+                )
+            user_id = target_user.id
         else:
             raise APIException(
                 status_code=403,
@@ -109,11 +117,12 @@ def delete_rfid(rfid_id: int, current_user: User = Depends(get_current_user)):
                 status_code=403,
                 detail="Cannot delete RFIDs for users from other apartments",
             )
-    elif current_user.role == "guest":
-        # Guests can only delete their own RFIDs
+    elif current_user.role in ["guest", "user"]:
+        # Guests and users can only delete their own RFIDs
         if rfid.user_id != current_user.id:
             raise APIException(
-                status_code=403, detail="Guests can only delete their own RFIDs"
+                status_code=403,
+                detail="Guests and users can only delete their own RFIDs",
             )
     else:
         raise APIException(status_code=403, detail="Insufficient permissions")
@@ -130,7 +139,7 @@ def list_rfids(current_user: User = Depends(get_current_user)):
     elif current_user.role == "apartment_admin":
         rfids = db.get_apartment_rfids(current_user.apartment.id)
     else:
-        raise APIException(status_code=403, detail="Guests cannot list RFIDs")
+        raise APIException(status_code=403, detail="Guests and users cannot list RFIDs")
 
     return [
         RFIDResponse(

@@ -67,7 +67,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=True)
     role = Column(
         String, default="apartment_admin"
-    )  # Can be 'apartment_admin', 'admin', or 'guest'
+    )  # Can be 'apartment_admin', 'admin', 'user', or 'guest'
     creator_id = Column(String)
     apartment_id = Column(Integer, ForeignKey("apartments.id"))
     is_active = Column(Boolean, nullable=False, default=True)

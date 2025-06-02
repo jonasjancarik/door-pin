@@ -17,9 +17,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 def create_user(
     new_user: UserCreate, current_user: User = Depends(get_current_user)
 ):  # Use the Pydantic User model
-    if current_user.role == "guest":
+    if current_user.role in ["guest", "user"]:
         raise APIException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Guests cannot create users"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Guests and users cannot create other users",
         )
 
     if not ((apartment := new_user.apartment) and apartment.number):
@@ -75,7 +76,7 @@ def list_users(current_user: User = Depends(get_current_user)):
     elif current_user.role == "apartment_admin":
         users = db.get_apartment_users(current_user.apartment.id)
     else:
-        raise APIException(status_code=403, detail="Guests cannot list users")
+        raise APIException(status_code=403, detail="Guests and users cannot list users")
 
     return [build_user_response(user) for user in users]
 
@@ -91,7 +92,7 @@ def get_user(user_id: int, current_user: User = Depends(get_current_user)):
             raise APIException(
                 status_code=403, detail="Admin access required to view other users"
             )
-        elif current_user.role != "apartment_admin":
+        elif current_user.role not in ["apartment_admin"]:
             raise APIException(
                 status_code=403,
                 detail="Only apartment admins (and admins) can view other users from the same apartment.",

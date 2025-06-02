@@ -1,13 +1,17 @@
 apartment_number,name,email,role
 1,John Doe,john@doe.com,admin
 2,Peter Smith,peter@smith.com,apartment_admin
+2,Sarah Johnson,sarah@johnson.com,user
 2,Mary Jones,mary@jones.com,guest
 3,Bob Johnson,bob@johnson.com,admin
 4,Alice Brown,alice@brown.com,apartment_admin
+4,David Wilson,david@wilson.com,user
 4,Charlie Davis,charlie@davis.com,guest
 5,Eva Green,eva@green.com,apartment_admin
 5,Frank White,frank@white.com,apartment_admin
+5,Lisa Miller,lisa@miller.com,user
 5,Grace Black,grace@black.com,guest
 6,Henry Blue,henry@blue.com,apartment_admin
 6,Ivy White,ivy@white.com,apartment_admin
+6,Mike Brown,mike@brown.com,user
 6,Jack Red,jack@red.com,guest

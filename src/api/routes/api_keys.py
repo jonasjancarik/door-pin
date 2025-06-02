@@ -23,7 +23,7 @@ async def create_api_key(
     data: APIKeyCreate,
     current_user: db.User = Depends(get_current_user),
 ):
-    if current_user.role == "guest":
+    if current_user.role in ["guest"]:
         raise APIException(
             status_code=403,
             detail="Guests cannot create API keys",
@@ -44,6 +44,14 @@ async def create_api_key(
                 raise APIException(
                     status_code=403,
                     detail="Cannot create API keys for users from other apartments",
+                )
+            user_id = target_user.id
+        elif current_user.role == "user":
+            # Regular users can only create API keys for themselves
+            if target_user.id != current_user.id:
+                raise APIException(
+                    status_code=403,
+                    detail="Users can only create API keys for themselves",
                 )
             user_id = target_user.id
         else:
@@ -117,7 +125,7 @@ async def delete_api_key(
                 detail="Cannot delete API keys for users from other apartments",
             )
     else:
-        # Guests can only delete their own API keys
+        # Guests and users can only delete their own API keys
         if api_key.user_id != current_user.id:
             raise APIException(
                 status_code=403,

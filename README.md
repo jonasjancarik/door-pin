@@ -263,3 +263,46 @@ Run `python setup.py` to create the database and set up the first user. You can 
 Launch the API server with `uvicorn api:app` (or with the `--reload` flag for development). 
 
 You need to obtain a bearer token first to use the API directly - you can do it through the web app and extracting the bearer token from the `Authorization` header of the requests. There is functionality for proper API keys in the API, but it is not tested and implemented in the frontend client app yet.
+
+#### User Roles
+
+The system supports four user roles with different permission levels:
+
+##### 1. **Admin** 
+- Full system access
+- Can manage all users across all apartments
+- Can create/update/delete any user, PIN, RFID, or API key
+- Can access all system endpoints and administrative functions
+
+##### 2. **Apartment Admin**
+- Can manage users within their own apartment only
+- Can create/update/delete users, PINs, RFIDs for users in their apartment
+- Can view apartment-specific data and manage guest schedules
+- Cannot access other apartments or system-wide settings
+
+##### 3. **User** 
+- Regular apartment resident with self-management capabilities
+- Can create/update/delete their own PINs (with custom PIN values)
+- Can create/update/delete their own RFIDs and API keys
+- Can view their own profile information
+- Has 24/7 access (no schedule restrictions)
+- **Cannot** create other users or access apartment-wide data
+- **Cannot** be put on guest schedules
+
+##### 4. **Guest**
+- Very limited access for temporary users
+- PINs are automatically generated (cannot set custom PINs)
+- Can be put on time-based access schedules
+- Subject to schedule restrictions (access only during allowed times)
+- Can only manage their own credentials
+- Cannot create other users or access apartment data
+
+##### Key Role Differences
+
+| Feature | Admin | Apartment Admin | User | Guest |
+|---------|-------|----------------|------|--------|
+| User Management | ✅ All apartments | ✅ Own apartment | ❌ None | ❌ None |
+| Custom PINs | ✅ Any user | ✅ Apartment users | ✅ Self only | ❌ Auto-generated |
+| Access Schedules | ✅ Manage all | ✅ Apartment guests | ❌ Not scheduled | ⏰ Subject to schedules |
+| System Access | 🕐 24/7 | 🕐 24/7 | 🕐 24/7 | ⏰ Scheduled only |
+| Data Visibility | 👁️ System-wide | 👁️ Apartment-wide | 👁️ Self only | 👁️ Self only |

@@ -31,6 +31,14 @@ def create_pin(pin_request: PINCreate, current_user: User = Depends(get_current_
                     detail="Cannot create PINs for users from other apartments",
                 )
             user_id = target_user.id
+        elif current_user.role == "user":
+            # Regular users can only create PINs for themselves
+            if target_user.id != current_user.id:
+                raise APIException(
+                    status_code=403,
+                    detail="Users can only create PINs for themselves",
+                )
+            user_id = target_user.id
         else:
             raise APIException(
                 status_code=403,
@@ -64,7 +72,7 @@ def create_pin(pin_request: PINCreate, current_user: User = Depends(get_current_
             if is_unique:
                 break
     else:
-        # For non-guest users, PIN must be provided
+        # For non-guest users (including regular users), PIN must be provided
         if not pin_request.pin:
             raise APIException(
                 status_code=400,
@@ -133,11 +141,12 @@ def delete_pin(pin_id: int, current_user: User = Depends(get_current_user)):
                 status_code=403,
                 detail="Cannot delete PINs for users from other apartments",
             )
-    elif current_user.role == "guest":
-        # Guests can only delete their own PINs
+    elif current_user.role in ["guest", "user"]:
+        # Guests and users can only delete their own PINs
         if pin.user_id != current_user.id:
             raise APIException(
-                status_code=403, detail="Guests can only delete their own PINs"
+                status_code=403,
+                detail="Guests and users can only delete their own PINs",
             )
     else:
         raise APIException(status_code=403, detail="Insufficient permissions")
@@ -154,7 +163,7 @@ def list_pins(current_user: User = Depends(get_current_user)):
     elif current_user.role == "apartment_admin":
         pins = db.get_apartment_pins(current_user.apartment.id)
     else:
-        raise APIException(status_code=403, detail="Guests cannot list PINs")
+        raise APIException(status_code=403, detail="Guests and users cannot list PINs")
 
     return [
         PINResponse(
