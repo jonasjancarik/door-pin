@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 import os
 from src.api.dependencies import get_current_user
+from src.api.permissions import Permission, require_permission
 from src.db import User  # Assuming User model is in src.db
 from src.logger import logger  # For logging access attempts
 
@@ -12,28 +13,15 @@ LOG_FILE_PATH = os.path.join(
 )  # Path to the log file relative to project root
 
 
-async def get_current_admin_user(
-    current_user: User = Depends(get_current_user),
-) -> User:
-    if not current_user or current_user.role != "admin":
-        logger.warning(
-            f"User {current_user.id if current_user else 'Unknown'} ({current_user.name if current_user else 'N/A'}) attempted to access logs without admin role."
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="You do not have permission to access this resource. Admin role required.",
-        )
-    return current_user
-
-
 @router.get("/logs", tags=["logs"], response_class=PlainTextResponse)
-async def get_application_logs(admin_user: User = Depends(get_current_admin_user)):
+@require_permission(Permission.LOGS_VIEW)
+async def get_application_logs(current_user: User = Depends(get_current_user)):
     """
     Retrieves the application log file.
     Requires admin privileges.
     """
     logger.info(
-        f"Admin user {admin_user.id} ({admin_user.name}) accessed application logs."
+        f"Admin user {current_user.id} ({current_user.name}) accessed application logs."
     )
     try:
         if not os.path.exists(LOG_FILE_PATH):

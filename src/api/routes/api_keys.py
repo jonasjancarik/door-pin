@@ -5,6 +5,7 @@ import hashlib
 from src.api.models import APIKeyCreate, APIKeyResponse, APIKeyWithSecret
 from src.api.dependencies import get_current_user
 from src.api.exceptions import APIException
+from src.api.permissions import Permission, require_any_permission, PermissionChecker
 import src.db as db
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
@@ -19,46 +20,28 @@ def generate_api_key() -> tuple[str, str, str]:
 
 
 @router.post("", response_model=APIKeyWithSecret)
+@require_any_permission(
+    Permission.API_KEYS_CREATE_OTHER, Permission.API_KEYS_CREATE_OWN
+)
 async def create_api_key(
     data: APIKeyCreate,
     current_user: db.User = Depends(get_current_user),
 ):
-    if current_user.role in ["guest"]:
-        raise APIException(
-            status_code=403,
-            detail="Guests cannot create API keys",
-        )
-
     # If a user_id is provided in the request, we're creating a key for another user
     if data.user_id:
         target_user = db.get_user(data.user_id)
         if not target_user:
             raise APIException(status_code=404, detail="User not found")
 
-        if current_user.role == "admin":
-            # Admins can create API keys for any user
-            user_id = target_user.id
-        elif current_user.role == "apartment_admin":
-            # Apartment admins can only create API keys for users in their apartment
-            if target_user.apartment_id != current_user.apartment_id:
-                raise APIException(
-                    status_code=403,
-                    detail="Cannot create API keys for users from other apartments",
-                )
-            user_id = target_user.id
-        elif current_user.role == "user":
-            # Regular users can only create API keys for themselves
-            if target_user.id != current_user.id:
-                raise APIException(
-                    status_code=403,
-                    detail="Users can only create API keys for themselves",
-                )
-            user_id = target_user.id
-        else:
+        # Check if user can create for the target user
+        if not PermissionChecker.can_create_for_user(
+            current_user, target_user, Permission.API_KEYS_CREATE_OTHER
+        ):
             raise APIException(
-                status_code=403,
-                detail="Insufficient permissions to create API keys for other users",
+                status_code=403, detail="Cannot create API key for this user"
             )
+
+        user_id = target_user.id
     else:
         # If no user_id is provided, create API key for the current user
         user_id = current_user.id
@@ -83,10 +66,17 @@ async def create_api_key(
 
 
 @router.get("", status_code=status.HTTP_200_OK)
+@require_any_permission(
+    Permission.API_KEYS_LIST_ALL,
+    Permission.API_KEYS_LIST_APARTMENT,
+    Permission.API_KEYS_LIST_OWN,
+)
 def list_api_keys(current_user: db.User = Depends(get_current_user)):
-    if current_user.role == "admin":
+    if PermissionChecker.has_permission(current_user, Permission.API_KEYS_LIST_ALL):
         api_keys = db.get_all_api_keys()
-    elif current_user.role == "apartment_admin":
+    elif PermissionChecker.has_permission(
+        current_user, Permission.API_KEYS_LIST_APARTMENT
+    ):
         api_keys = db.get_apartment_api_keys(current_user.apartment_id)
     else:
         # Regular users can only see their own API keys
@@ -105,6 +95,9 @@ def list_api_keys(current_user: db.User = Depends(get_current_user)):
 
 
 @router.delete("/{key_suffix}")
+@require_any_permission(
+    Permission.API_KEYS_DELETE_OTHER, Permission.API_KEYS_DELETE_OWN
+)
 async def delete_api_key(
     key_suffix: str,
     current_user: db.User = Depends(get_current_user),
@@ -113,24 +106,12 @@ async def delete_api_key(
     if not api_key:
         raise APIException(status_code=404, detail="API key not found")
 
-    if current_user.role == "admin":
-        # Admins can delete any API key
-        pass
-    elif current_user.role == "apartment_admin":
-        # Apartment admins can only delete API keys from their apartment
-        key_owner = db.get_api_key_owner(api_key.user_id)
-        if key_owner.apartment_id != current_user.apartment_id:
-            raise APIException(
-                status_code=403,
-                detail="Cannot delete API keys for users from other apartments",
-            )
-    else:
-        # Guests and users can only delete their own API keys
-        if api_key.user_id != current_user.id:
-            raise APIException(
-                status_code=403,
-                detail="You can only delete your own API keys",
-            )
+    # Check resource access
+    key_owner = db.get_api_key_owner(api_key.user_id)
+    if not PermissionChecker.can_access_user_resource(
+        current_user, api_key.user_id, key_owner
+    ):
+        raise APIException(status_code=403, detail="Cannot access this API key")
 
     if db.delete_api_key(key_suffix):
         return {"message": "API key deleted"}

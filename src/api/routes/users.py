@@ -7,6 +7,12 @@ from ..models import (
 )
 from ..exceptions import APIException
 from ..dependencies import get_current_user
+from ..permissions import (
+    Permission,
+    require_permission,
+    require_any_permission,
+    PermissionChecker,
+)
 from ..utils import build_user_response
 import src.db as db
 
@@ -14,15 +20,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
+@require_any_permission(Permission.USERS_CREATE)
 def create_user(
     new_user: UserCreate, current_user: User = Depends(get_current_user)
 ):  # Use the Pydantic User model
-    if current_user.role in ["guest", "user"]:
-        raise APIException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Guests and users cannot create other users",
-        )
-
     if not ((apartment := new_user.apartment) and apartment.number):
         raise APIException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -42,7 +43,11 @@ def create_user(
             detail=f"Apartment with number {new_user.apartment.number} not found",
         )
 
-    if apartment.id != current_user.apartment.id and current_user.role != "admin":
+    # Check apartment access for apartment admins
+    if (
+        current_user.role == "apartment_admin"
+        and apartment.id != current_user.apartment.id
+    ):
         raise APIException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only create users for your own apartment",
@@ -70,33 +75,30 @@ def create_user(
 
 
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[UserResponse])
+@require_any_permission(Permission.USERS_LIST_ALL, Permission.USERS_LIST_APARTMENT)
 def list_users(current_user: User = Depends(get_current_user)):
-    if current_user.role == "admin":
+    if PermissionChecker.has_permission(current_user, Permission.USERS_LIST_ALL):
         users = db.get_all_users()
-    elif current_user.role == "apartment_admin":
+    elif PermissionChecker.has_permission(
+        current_user, Permission.USERS_LIST_APARTMENT
+    ):
         users = db.get_apartment_users(current_user.apartment.id)
     else:
-        raise APIException(status_code=403, detail="Guests and users cannot list users")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     return [build_user_response(user) for user in users]
 
 
 @router.get("/{user_id}", status_code=status.HTTP_200_OK, response_model=UserResponse)
+@require_any_permission(Permission.USERS_VIEW_OTHER, Permission.USERS_VIEW_OWN)
 def get_user(user_id: int, current_user: User = Depends(get_current_user)):
     user = db.get_user(user_id)
     if not user:
         raise APIException(status_code=404, detail="User not found")
 
-    if current_user.role != "admin" and current_user.id != user_id:
-        if current_user.apartment.id != user.apartment.id:
-            raise APIException(
-                status_code=403, detail="Admin access required to view other users"
-            )
-        elif current_user.role not in ["apartment_admin"]:
-            raise APIException(
-                status_code=403,
-                detail="Only apartment admins (and admins) can view other users from the same apartment.",
-            )
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(current_user, user_id, user):
+        raise APIException(status_code=403, detail="Cannot access this user")
 
     return UserResponse(
         id=user.id,
@@ -108,24 +110,24 @@ def get_user(user_id: int, current_user: User = Depends(get_current_user)):
 
 
 @router.put("/{user_id}", status_code=status.HTTP_200_OK, response_model=UserResponse)
+@require_any_permission(Permission.USERS_UPDATE_OTHER, Permission.USERS_UPDATE_OWN)
 def update_user(
     user_id: int,
     updated_user: UserUpdate,
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role not in ["admin", "apartment_admin"]:
-        raise APIException(status_code=403, detail="Insufficient permissions")
-
     user_to_update = db.get_user(user_id)
     if not user_to_update:
         raise APIException(status_code=404, detail="User not found")
 
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(
+        current_user, user_id, user_to_update
+    ):
+        raise APIException(status_code=403, detail="Cannot access this user")
+
+    # Additional role-specific checks for apartment admins
     if current_user.role == "apartment_admin":
-        # Check if user is in the same apartment
-        if user_to_update.apartment_id != current_user.apartment_id:
-            raise APIException(
-                status_code=403, detail="Cannot update users from other apartments"
-            )
         # Check if trying to set role to admin
         if updated_user.role == "admin":
             raise APIException(
@@ -158,19 +160,20 @@ def update_user(
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_permission(Permission.USERS_DELETE_OTHER)
 def delete_user(user_id: int, current_user: User = Depends(get_current_user)):
-    if current_user.role not in ["admin", "apartment_admin"]:
-        raise APIException(status_code=403, detail="Insufficient permissions")
-
     user_to_delete = db.get_user(user_id)
     if not user_to_delete:
         raise APIException(status_code=404, detail="User not found")
 
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(
+        current_user, user_id, user_to_delete
+    ):
+        raise APIException(status_code=403, detail="Cannot access this user")
+
+    # Additional role-specific checks for apartment admins
     if current_user.role == "apartment_admin":
-        if user_to_delete.apartment_id != current_user.apartment_id:
-            raise APIException(
-                status_code=403, detail="Cannot delete users from other apartments"
-            )
         if user_to_delete.role == "admin":
             raise APIException(
                 status_code=403, detail="Apartment admins cannot delete admin users"
@@ -182,55 +185,46 @@ def delete_user(user_id: int, current_user: User = Depends(get_current_user)):
 
 
 @router.get("/{user_id}/rfids", status_code=status.HTTP_200_OK)
+@require_any_permission(
+    Permission.RFIDS_LIST_ALL,
+    Permission.RFIDS_LIST_APARTMENT,
+    Permission.RFIDS_VIEW_OWN,
+)
 def list_user_rfids(
     current_user: User = Depends(get_current_user),
     user_id: int = Path(..., description="The ID of the user whose RFIDs to list"),
 ):
-    if current_user.role == "admin":
-        rfids = db.get_user_rfids(user_id)
-    elif (
-        current_user.role == "apartment_admin"
-        and current_user.apartment_id == db.get_user(user_id).apartment_id
-    ):
-        rfids = db.get_user_rfids(user_id)
-    elif current_user.id == user_id:
-        rfids = db.get_user_rfids(user_id)
-    else:
-        raise APIException(status_code=403, detail="Insufficient permissions")
+    target_user = db.get_user(user_id)
+    if not target_user:
+        raise APIException(status_code=404, detail="User not found")
 
-    return [
-        {
-            "id": rfid.id,
-            "label": rfid.label,
-            "created_at": rfid.created_at,
-            "last_four_digits": rfid.last_four_digits,
-        }
-        for rfid in rfids
-    ]
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(
+        current_user, user_id, target_user
+    ):
+        raise APIException(status_code=403, detail="Cannot access this user's RFIDs")
+
+    rfids = db.get_user_rfids(user_id)
+    return rfids
 
 
 @router.get("/{user_id}/pins", status_code=status.HTTP_200_OK)
+@require_any_permission(
+    Permission.PINS_LIST_ALL, Permission.PINS_LIST_APARTMENT, Permission.PINS_VIEW_OWN
+)
 def list_user_pins(
     current_user: User = Depends(get_current_user),
     user_id: int = Path(..., description="User ID to fetch pins for"),
 ):
-    if current_user.role == "admin":
-        pins = db.get_user_pins(user_id)
-    elif (
-        current_user.role == "apartment_admin"
-        and current_user.apartment_id == db.get_user(user_id).apartment_id
-    ):
-        pins = db.get_user_pins(user_id)
-    elif current_user.id == user_id:
-        pins = db.get_user_pins(user_id)
-    else:
-        raise APIException(status_code=403, detail="Insufficient permissions")
+    target_user = db.get_user(user_id)
+    if not target_user:
+        raise APIException(status_code=404, detail="User not found")
 
-    return [
-        {
-            "id": pin.id,
-            "label": pin.label,
-            "created_at": pin.created_at,
-        }
-        for pin in pins
-    ]
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(
+        current_user, user_id, target_user
+    ):
+        raise APIException(status_code=403, detail="Cannot access this user's PINs")
+
+    pins = db.get_user_pins(user_id)
+    return pins

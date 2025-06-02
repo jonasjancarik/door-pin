@@ -2,6 +2,7 @@ from fastapi import APIRouter, status, Response, Depends
 from ..models import PINCreate, PINResponse, PINUpdate, User
 from ..exceptions import APIException
 from ..dependencies import get_current_user
+from ..permissions import Permission, require_any_permission, PermissionChecker
 import src.db as db
 import src.utils as utils
 import random
@@ -14,36 +15,22 @@ router = APIRouter(prefix="/pins", tags=["pins"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=PINResponse)
+@require_any_permission(Permission.PINS_CREATE_OTHER, Permission.PINS_CREATE_OWN)
 def create_pin(pin_request: PINCreate, current_user: User = Depends(get_current_user)):
     if pin_request.user_id:
         target_user = db.get_user(pin_request.user_id)
         if not target_user:
             raise APIException(status_code=404, detail="User not found")
 
-        if current_user.role == "admin":
-            # Admins can create PINs for any user
-            user_id = target_user.id
-        elif current_user.role == "apartment_admin":
-            # Apartment admins can only create PINs for users in their apartment
-            if target_user.apartment_id != current_user.apartment_id:
-                raise APIException(
-                    status_code=403,
-                    detail="Cannot create PINs for users from other apartments",
-                )
-            user_id = target_user.id
-        elif current_user.role == "user":
-            # Regular users can only create PINs for themselves
-            if target_user.id != current_user.id:
-                raise APIException(
-                    status_code=403,
-                    detail="Users can only create PINs for themselves",
-                )
-            user_id = target_user.id
-        else:
+        # Check if user can create for the target user
+        if not PermissionChecker.can_create_for_user(
+            current_user, target_user, Permission.PINS_CREATE_OTHER
+        ):
             raise APIException(
-                status_code=403,
-                detail="Insufficient permissions to create PINs for other users",
+                status_code=403, detail="Cannot create PIN for this user"
             )
+
+        user_id = target_user.id
     else:
         # If no user_id is provided, create PIN for the current user
         user_id = current_user.id
@@ -101,6 +88,7 @@ def create_pin(pin_request: PINCreate, current_user: User = Depends(get_current_
 
 
 @router.patch("/{pin_id}", status_code=status.HTTP_200_OK)
+@require_any_permission(Permission.PINS_UPDATE_OTHER, Permission.PINS_UPDATE_OWN)
 def update_pin(
     pin_id: int, pin_request: PINUpdate, current_user: User = Depends(get_current_user)
 ):
@@ -108,10 +96,11 @@ def update_pin(
     if not pin:
         raise APIException(status_code=404, detail="PIN not found")
 
-    if current_user.role != "admin" and pin.user_id != current_user.id:
-        raise APIException(
-            status_code=403, detail="Insufficient permissions to update this PIN"
-        )  # todo: apartment admins should be able to update their own apartment's users' PINs
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(
+        current_user, pin.user_id, pin.user
+    ):
+        raise APIException(status_code=403, detail="Cannot access this PIN")
 
     salt = utils.generate_salt()
     hashed_pin = (
@@ -126,30 +115,17 @@ def update_pin(
 
 
 @router.delete("/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_any_permission(Permission.PINS_DELETE_OTHER, Permission.PINS_DELETE_OWN)
 def delete_pin(pin_id: int, current_user: User = Depends(get_current_user)):
     pin = db.get_pin(pin_id)
     if not pin:
         raise APIException(status_code=404, detail="PIN not found")
 
-    if current_user.role == "admin":
-        # Admins can delete any PIN
-        pass
-    elif current_user.role == "apartment_admin":
-        # Apartment admins can only delete PINs from their apartment
-        if pin.user.apartment_id != current_user.apartment_id:
-            raise APIException(
-                status_code=403,
-                detail="Cannot delete PINs for users from other apartments",
-            )
-    elif current_user.role in ["guest", "user"]:
-        # Guests and users can only delete their own PINs
-        if pin.user_id != current_user.id:
-            raise APIException(
-                status_code=403,
-                detail="Guests and users can only delete their own PINs",
-            )
-    else:
-        raise APIException(status_code=403, detail="Insufficient permissions")
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(
+        current_user, pin.user_id, pin.user
+    ):
+        raise APIException(status_code=403, detail="Cannot access this PIN")
 
     if db.delete_pin(pin_id):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -157,13 +133,14 @@ def delete_pin(pin_id: int, current_user: User = Depends(get_current_user)):
 
 
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[PINResponse])
+@require_any_permission(Permission.PINS_LIST_ALL, Permission.PINS_LIST_APARTMENT)
 def list_pins(current_user: User = Depends(get_current_user)):
-    if current_user.role == "admin":
+    if PermissionChecker.has_permission(current_user, Permission.PINS_LIST_ALL):
         pins = db.get_all_pins()
-    elif current_user.role == "apartment_admin":
+    elif PermissionChecker.has_permission(current_user, Permission.PINS_LIST_APARTMENT):
         pins = db.get_apartment_pins(current_user.apartment.id)
     else:
-        raise APIException(status_code=403, detail="Guests and users cannot list PINs")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     return [
         PINResponse(

@@ -3,6 +3,7 @@ from ..models import RFIDCreate, RFIDResponse, User
 from ..exceptions import APIException
 from ..utils import build_user_response
 from ..dependencies import get_current_user
+from ..permissions import Permission, require_any_permission, PermissionChecker
 import src.db as db
 import src.utils as utils
 from src.logger import logger
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/rfids", tags=["rfids"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@require_any_permission(Permission.RFIDS_CREATE_OTHER, Permission.RFIDS_CREATE_OWN)
 def create_rfid(
     rfid_request: RFIDCreate, current_user: User = Depends(get_current_user)
 ):
@@ -30,30 +32,15 @@ def create_rfid(
         if not target_user:
             raise APIException(status_code=404, detail="User not found")
 
-        if current_user.role == "admin":
-            # Admins can create RFIDs for any user
-            user_id = target_user.id
-        elif current_user.role == "apartment_admin":
-            # Apartment admins can only create RFIDs for users in their apartment
-            if target_user.apartment_id != current_user.apartment_id:
-                raise APIException(
-                    status_code=403,
-                    detail="Cannot create RFIDs for users from other apartments",
-                )
-            user_id = target_user.id
-        elif current_user.role == "user":
-            # Regular users can only create RFIDs for themselves
-            if target_user.id != current_user.id:
-                raise APIException(
-                    status_code=403,
-                    detail="Users can only create RFIDs for themselves",
-                )
-            user_id = target_user.id
-        else:
+        # Check if user can create for the target user
+        if not PermissionChecker.can_create_for_user(
+            current_user, target_user, Permission.RFIDS_CREATE_OTHER
+        ):
             raise APIException(
-                status_code=403,
-                detail="Insufficient permissions to create RFIDs for other users",
+                status_code=403, detail="Cannot create RFID for this user"
             )
+
+        user_id = target_user.id
     else:
         # If no user_id is provided, create RFID for the current user
         user_id = current_user.id
@@ -102,30 +89,17 @@ async def read_rfid(timeout: int, user: User = Depends(get_current_user)):
 
 
 @router.delete("/{rfid_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_any_permission(Permission.RFIDS_DELETE_OTHER, Permission.RFIDS_DELETE_OWN)
 def delete_rfid(rfid_id: int, current_user: User = Depends(get_current_user)):
     rfid = db.get_rfid(rfid_id)
     if not rfid:
         raise APIException(status_code=404, detail="RFID not found")
 
-    if current_user.role == "admin":
-        # Admins can delete any RFID
-        pass
-    elif current_user.role == "apartment_admin":
-        # Apartment admins can only delete RFIDs from their apartment
-        if rfid.user.apartment_id != current_user.apartment_id:
-            raise APIException(
-                status_code=403,
-                detail="Cannot delete RFIDs for users from other apartments",
-            )
-    elif current_user.role in ["guest", "user"]:
-        # Guests and users can only delete their own RFIDs
-        if rfid.user_id != current_user.id:
-            raise APIException(
-                status_code=403,
-                detail="Guests and users can only delete their own RFIDs",
-            )
-    else:
-        raise APIException(status_code=403, detail="Insufficient permissions")
+    # Check resource access
+    if not PermissionChecker.can_access_user_resource(
+        current_user, rfid.user_id, rfid.user
+    ):
+        raise APIException(status_code=403, detail="Cannot access this RFID")
 
     if db.delete_rfid(rfid_id):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -133,13 +107,16 @@ def delete_rfid(rfid_id: int, current_user: User = Depends(get_current_user)):
 
 
 @router.get("", status_code=status.HTTP_200_OK)
+@require_any_permission(Permission.RFIDS_LIST_ALL, Permission.RFIDS_LIST_APARTMENT)
 def list_rfids(current_user: User = Depends(get_current_user)):
-    if current_user.role == "admin":
+    if PermissionChecker.has_permission(current_user, Permission.RFIDS_LIST_ALL):
         rfids = db.get_all_rfids()
-    elif current_user.role == "apartment_admin":
+    elif PermissionChecker.has_permission(
+        current_user, Permission.RFIDS_LIST_APARTMENT
+    ):
         rfids = db.get_apartment_rfids(current_user.apartment.id)
     else:
-        raise APIException(status_code=403, detail="Guests and users cannot list RFIDs")
+        raise APIException(status_code=403, detail="Insufficient permissions")
 
     return [
         RFIDResponse(
